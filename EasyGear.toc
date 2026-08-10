@@ -1,0 +1,7 @@
+## Interface: 30300
+## Title: EasyGear
+## Notes: Compares Items and gives advice which ones to equip or choose.
+## Version: 1.0
+## Author: You
+## Dependencies:
+EasyGear.lua
