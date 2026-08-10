@@ -7,7 +7,6 @@ PU.loaded = false
 PU.elvHooked = false
 
 
-
 ------------------------------------------------------------
 -- Class stat weights
 ------------------------------------------------------------
@@ -17,7 +16,6 @@ function PU:GetStatWeights()
     local class = select(2, UnitClass("player"))
 
     local weights = {
-
         WARRIOR = {
             ITEM_MOD_STRENGTH_SHORT = 10,
             ITEM_MOD_STAMINA_SHORT = 5,
@@ -100,7 +98,6 @@ function PU:GetStatWeights()
         },
     }
 
-
     local result = weights[class] or {
         ITEM_MOD_STAMINA_SHORT = 5
     }
@@ -121,7 +118,9 @@ function PU:GetStatWeights()
 
 end
 
+
 local timerFrame = CreateFrame("Frame")
+
 
 function PU:After(delay, callback)
 
@@ -140,13 +139,25 @@ function PU:After(delay, callback)
 
 end
 
+
+------------------------------------------------------------
+-- Item data
+------------------------------------------------------------
+
 function PU:GetItemData(itemLink)
 
     if not itemLink then
         return nil
     end
 
-    local _, _, _, itemLevel, _, _, _, _, equipLoc =
+    --------------------------------------------------------
+    -- IMPORTANT:
+    -- The third return value from GetItemInfo() is quality.
+    --
+    -- Quality 7 = Heirloom
+    --------------------------------------------------------
+
+    local _, _, quality, itemLevel, _, _, _, _, equipLoc =
         GetItemInfo(itemLink)
 
     if not itemLevel then
@@ -155,6 +166,7 @@ function PU:GetItemData(itemLink)
 
     local data = {
         level = itemLevel,
+        quality = quality or 0,
         equipLoc = equipLoc,
         stats = {}
     }
@@ -172,8 +184,9 @@ function PU:GetItemData(itemLink)
 end
 
 
-
-
+------------------------------------------------------------
+-- Item score
+------------------------------------------------------------
 
 function PU:GetItemScore(item)
 
@@ -199,6 +212,43 @@ function PU:GetItemScore(item)
 
 end
 
+
+------------------------------------------------------------
+-- Heirloom handling
+--
+-- Quality 7 = Heirloom.
+--
+-- An EQUIPPED heirloom is considered the best possible
+-- item while the character is below level 80.
+--
+-- At level 80, heirlooms return to normal score comparison.
+------------------------------------------------------------
+
+function PU:IsHeirloom(item)
+
+    if not item then
+        return false
+    end
+
+    --------------------------------------------------------
+    -- Level 80 is the maximum level for this addon.
+    -- Once the character reaches 80, heirlooms no longer
+    -- receive special treatment.
+    --------------------------------------------------------
+
+    if UnitLevel("player") >= 80 then
+        return false
+    end
+
+    return item.quality == 7
+
+end
+
+
+------------------------------------------------------------
+-- Debug item
+------------------------------------------------------------
+
 function PU:DebugItem(itemLink)
 
     local item = self:GetItemData(itemLink)
@@ -211,6 +261,7 @@ function PU:DebugItem(itemLink)
     print("========== ITEM ==========")
     print("Item:", itemLink)
     print("Level:", item.level)
+    print("Quality:", item.quality)
     print("Equip:", item.equipLoc)
 
     print("Stats:")
@@ -228,10 +279,12 @@ function PU:DebugItem(itemLink)
     end
 
     print("==========================")
+
 end
 
+
 ------------------------------------------------------------
--- check if item can be equipped
+-- Check if item can be equipped
 ------------------------------------------------------------
 
 function PU:CanEquipItem(itemLink)
@@ -258,8 +311,7 @@ function PU:CanEquipItem(itemLink)
     -- and itemType ~= "Waffe" then
     --     return true
     -- end
-    
-    
+
 
     local class =
         select(2, UnitClass("player"))
@@ -272,7 +324,6 @@ function PU:CanEquipItem(itemLink)
             ["Schwere Rüstung"] = true,
             ["Plattenrüstung"] = true,
             ["Verschiedenes"] = true,
-
             ["Dolche"] = true,
             ["Faustwaffen"] = true,
             ["Einhandäxte"] = true,
@@ -308,7 +359,6 @@ function PU:CanEquipItem(itemLink)
             ["Schwere Rüstung"] = true,
             ["Verschiedenes"] = true,
             ["Verschiedenes"] = true,
-
             ["Dolche"] = true,
             ["Einhandäxte"] = true,
             ["Zweihandäxte"] = true,
@@ -325,7 +375,6 @@ function PU:CanEquipItem(itemLink)
             ["Stoff"] = true,
             ["Leder"] = true,
             ["Verschiedenes"] = true,
-
             ["Dolche"] = true,
             ["Faustwaffen"] = true,
             ["Einhandäxte"] = true,
@@ -341,7 +390,6 @@ function PU:CanEquipItem(itemLink)
             ["Stoff"] = true,
             ["Leder"] = true,
             ["Verschiedenes"] = true,
-
             ["Dolche"] = true,
             ["Faustwaffen"] = true,
             ["Einhandstreitkolben"] = true,
@@ -356,7 +404,6 @@ function PU:CanEquipItem(itemLink)
             ["Leder"] = true,
             ["Schwere Rüstung"] = true,
             ["Verschiedenes"] = true,
-
             ["Dolche"] = true,
             ["Faustwaffen"] = true,
             ["Einhandäxte"] = true,
@@ -395,7 +442,9 @@ function PU:CanEquipItem(itemLink)
             ["Stäbe"] = true,
             ["Zauberstäbe"] = true,
         },
+
     }
+
 
     local result =
         allowed[class]
@@ -403,7 +452,9 @@ function PU:CanEquipItem(itemLink)
         or false
 
     return result
+
 end
+
 
 ------------------------------------------------------------
 -- Slot detection
@@ -413,7 +464,6 @@ function PU:GetEquipSlot(itemLink)
 
     local _,_,_,_,_,_,_,_,equipLoc =
         GetItemInfo(itemLink)
-
 
     if not equipLoc then
         return nil
@@ -442,7 +492,6 @@ function PU:GetEquipSlot(itemLink)
         INVTYPE_WEAPON = {16,17},
         INVTYPE_2HWEAPON = 16,
         INVTYPE_WEAPONMAINHAND = 16,
-
         INVTYPE_WEAPONOFFHAND = 17,
         INVTYPE_SHIELD = 17,
         INVTYPE_HOLDABLE = 17,
@@ -450,12 +499,14 @@ function PU:GetEquipSlot(itemLink)
         INVTYPE_RANGED = 18,
         INVTYPE_THROWN = 18,
         INVTYPE_RELIC = 18,
+
     }
 
 
     return slots[equipLoc]
 
 end
+
 
 ------------------------------------------------------------
 -- Quest reward comparison
@@ -467,28 +518,24 @@ function PU:GetQuestRewardScore(itemLink)
         return 0
     end
 
-
     local item =
         self:GetItemData(itemLink)
-
 
     if not item then
         return 0
     end
 
-
     return self:GetItemScore(item)
 
 end
+
 
 function PU:GetBestQuestReward()
 
     local bestButton
     local bestScore = 0
 
-
     for i = 1, GetNumQuestChoices() do
-
 
         local link =
             GetQuestItemLink(
@@ -496,14 +543,10 @@ function PU:GetBestQuestReward()
                 i
             )
 
-
         if link then
-
 
             local score =
                 self:GetQuestRewardScore(link)
-
-
 
             if score > bestScore then
 
@@ -516,17 +559,16 @@ function PU:GetBestQuestReward()
 
     end
 
-
     return bestButton,bestScore
 
 end
+
 
 function PU:CreateQuestIndicator(button)
 
     if button.PUQuestIcon then
         return
     end
-
 
     local icon =
         button:CreateTexture(
@@ -536,18 +578,15 @@ function PU:CreateQuestIndicator(button)
             7
         )
 
-
     icon:SetTexture(
         "Interface\\Buttons\\UI-CheckBox-Check"
     )
-
 
     icon:SetVertexColor(
         0,
         1,
         0
     )
-
 
     icon:SetPoint(
         "TOPRIGHT",
@@ -557,61 +596,46 @@ function PU:CreateQuestIndicator(button)
         -4
     )
 
-
     icon:SetSize(
         20,
         20
     )
 
-
     button.PUQuestIcon = icon
 
 end
 
+
 function PU:UpdateQuestRewards()
 
-
     local best,bestScore =
-    self:GetBestQuestReward()
-
-
+        self:GetBestQuestReward()
 
     if not best then
         return
     end
 
-
-
     for i=1,GetNumQuestChoices() do
-
 
         local button =
             _G["QuestInfoItem"..i]
 
-
         if button then
-
 
             self:CreateQuestIndicator(button)
 
-
-
             if i == best then
-
                 button.PUQuestIcon:Show()
-
             else
-
                 button.PUQuestIcon:Hide()
-
             end
-
 
         end
 
     end
 
 end
+
 
 function PU:HookQuestRewards()
 
@@ -619,21 +643,16 @@ function PU:HookQuestRewards()
         return
     end
 
-
     hooksecurefunc(
         "QuestInfo_Display",
         function()
 
             PU:After(0.2, function()
-
-                    PU:UpdateQuestRewards()
-
-                end
-            )
+                PU:UpdateQuestRewards()
+            end)
 
         end
     )
-
 
     PU.questHooked=true
 
@@ -642,6 +661,9 @@ end
 
 ------------------------------------------------------------
 -- Simple upgrade check
+--
+-- Equipped Quality 7 items (Heirlooms) are considered
+-- better than every normal item until level 80.
 ------------------------------------------------------------
 
 function PU:IsUpgrade(itemLink)
@@ -654,23 +676,28 @@ function PU:IsUpgrade(itemLink)
     local newItem =
         self:GetItemData(itemLink)
 
-
     if not newItem then
-        return false
+        return false, 0, 0
     end
 
 
     local slot =
         self:GetEquipSlot(itemLink)
 
-
     if not slot then
-        return false
+        return false, 0, 0
     end
 
 
+    --------------------------------------------------------
+    -- Compare one equipment slot.
+    --------------------------------------------------------
 
     local function Compare(oldLink)
+
+        ----------------------------------------------------
+        -- Empty slot.
+        ----------------------------------------------------
 
         if not oldLink then
             return true, 0, 0
@@ -680,16 +707,34 @@ function PU:IsUpgrade(itemLink)
         local oldItem =
             self:GetItemData(oldLink)
 
-
         if not oldItem then
-            return false
+            return false, 0, 0
         end
 
 
-        local newValue = self:GetItemScore(newItem)
+        local newValue =
+            self:GetItemScore(newItem)
 
 
-        local oldValue = self:GetItemScore(oldItem)
+        local oldValue =
+            self:GetItemScore(oldItem)
+
+
+        ----------------------------------------------------
+        -- Heirloom protection.
+        --
+        -- If the currently equipped item is Quality 7 and
+        -- the character is below level 80, it is treated
+        -- as infinitely better than a normal replacement.
+        ----------------------------------------------------
+
+        if self:IsHeirloom(oldItem) then
+
+            return false,
+                   newValue,
+                   math.huge
+
+        end
 
 
         return newValue > oldValue,
@@ -699,45 +744,90 @@ function PU:IsUpgrade(itemLink)
     end
 
 
+    --------------------------------------------------------
+    -- Items that can occupy multiple slots:
+    --
+    -- Rings
+    -- Trinkets
+    -- One-handed weapons
+    --------------------------------------------------------
 
     if type(slot) == "table" then
 
         local worstOld = math.huge
-    
+
+
         for _, s in ipairs(slot) do
-    
-            local oldLink = GetInventoryItemLink("player", s)
-    
-            -- Empty slot means the new item can be equipped immediately.
+
+            local oldLink =
+                GetInventoryItemLink(
+                    "player",
+                    s
+                )
+
+
+            ------------------------------------------------
+            -- Empty slot means the new item can be equipped
+            -- immediately.
+            ------------------------------------------------
+
             if not oldLink then
+
                 worstOld = 0
                 break
+
             end
-    
-            local old = self:GetItemData(oldLink)
-    
+
+
+            local old =
+                self:GetItemData(oldLink)
+
+
             if old then
-                local value = self:GetItemScore(old)
-    
+
+                local value
+
+
+                ------------------------------------------------
+                -- Equipped heirloom is considered infinitely
+                -- valuable while below level 80.
+                ------------------------------------------------
+
+                if self:IsHeirloom(old) then
+                    value = math.huge
+                else
+                    value = self:GetItemScore(old)
+                end
+
+
                 if value < worstOld then
                     worstOld = value
                 end
+
             end
-    
+
         end
-    
+
+
         if worstOld == math.huge then
             worstOld = 0
         end
-    
-        local newValue = self:GetItemScore(newItem)
-    
+
+
+        local newValue =
+            self:GetItemScore(newItem)
+
+
         return newValue > worstOld,
                newValue,
                worstOld
-    
+
     end
 
+
+    --------------------------------------------------------
+    -- Single equipment slot.
+    --------------------------------------------------------
 
     return Compare(
         GetInventoryItemLink(
@@ -747,7 +837,6 @@ function PU:IsUpgrade(itemLink)
     )
 
 end
-
 
 
 ------------------------------------------------------------
@@ -760,44 +849,44 @@ function PU:CreateUpgradeIndicator(button)
         return
     end
 
-	local icon =
-		button:CreateTexture(
-			nil,
-			"OVERLAY",
-			nil,
-			7
-		)
+    local icon =
+        button:CreateTexture(
+            nil,
+            "OVERLAY",
+            nil,
+            7
+        )
 
-	icon:SetTexture(
-		"Interface\\Buttons\\UI-CheckBox-Check"
-	)
+    icon:SetTexture(
+        "Interface\\Buttons\\UI-CheckBox-Check"
+    )
 
-	icon:SetVertexColor(
-		1,
-		1,
-		1,
-		1
-	)
+    icon:SetVertexColor(
+        1,
+        1,
+        1,
+        1
+    )
 
-	icon:SetPoint(
-		"TOPRIGHT",
-		button,
-		"TOPRIGHT",
-		-4,
-		-4
-	)
+    icon:SetPoint(
+        "TOPRIGHT",
+        button,
+        "TOPRIGHT",
+        -4,
+        -4
+    )
 
-	icon:SetSize(
-		20,
-		20
-	)
+    icon:SetSize(
+        20,
+        20
+    )
 
-	icon:SetTexCoord(0,1,0,1)
+    icon:SetTexCoord(0,1,0,1)
 
-	-- Remove ADD blending
-	icon:SetBlendMode("BLEND")
+    -- Remove ADD blending
+    icon:SetBlendMode("BLEND")
 
-	button.PUUpgradeIcon = icon
+    button.PUUpgradeIcon = icon
 
 end
 
@@ -808,35 +897,60 @@ function PU:UpdateBagButton(button, bagID, slotID)
         return
     end
 
+
     self:CreateUpgradeIndicator(button)
+
 
     local link
 
+
+    --------------------------------------------------------
     -- Bagnon
+    --------------------------------------------------------
+
     if button.GetItem then
         link = button:GetItem()
 
+
+    --------------------------------------------------------
     -- Blizzard / ElvUI
+    --------------------------------------------------------
+
     else
-        link = GetContainerItemLink(bagID, slotID)
+        link = GetContainerItemLink(
+            bagID,
+            slotID
+        )
     end
+
 
     if not link then
         button.PUUpgradeIcon:Hide()
         return
     end
 
-    local upgrade = self:IsUpgrade(link)
+
+    local upgrade =
+        self:IsUpgrade(link)
+
 
     if upgrade then
-        button.PUUpgradeIcon:SetVertexColor(0, 1, 0)
+
+        button.PUUpgradeIcon:SetVertexColor(
+            0,
+            1,
+            0
+        )
+
         button.PUUpgradeIcon:Show()
+
     else
+
         button.PUUpgradeIcon:Hide()
+
     end
 
 end
-
 
 
 ------------------------------------------------------------
@@ -876,12 +990,10 @@ function PU:HookElvUI()
     end
 
 
-
     hooksecurefunc(
         Bags,
         "UpdateSlot",
         function(_,frame,bagID,slotID)
-
 
             local button
 
@@ -912,10 +1024,11 @@ function PU:HookElvUI()
     self.elvHooked = true
 
 
-    print("|cff00ff00EasyGear:|r ElvUI bag support enabled.")
+    print(
+        "|cff00ff00EasyGear:|r ElvUI bag support enabled."
+    )
 
 end
-
 
 
 ------------------------------------------------------------
@@ -924,14 +1037,21 @@ end
 
 SLASH_EasyGear1="/puc"
 
+
 SlashCmdList["EasyGear"] =
 function(msg)
-    
+
     if not msg or msg == "" then
-        print("Usage: /puc itemlink")
+
+        print(
+            "Usage: /puc itemlink"
+        )
+
         return
+
     end
-    
+
+
     local upgrade,newScore,oldScore =
         PU:IsUpgrade(msg)
 
@@ -958,61 +1078,125 @@ function(msg)
 end
 
 
+------------------------------------------------------------
+-- Default Blizzard bags
+------------------------------------------------------------
+
 function PU:HookDefaultBags()
 
     if self.defaultHooked then
         return
     end
 
-    hooksecurefunc("ContainerFrame_Update", function(frame)
 
-        local bagID = frame:GetID()
+    hooksecurefunc(
+        "ContainerFrame_Update",
+        function(frame)
 
-        for i = 1, MAX_CONTAINER_ITEMS do
+            local bagID =
+                frame:GetID()
 
-            local button = _G[frame:GetName() .. "Item" .. i]
 
-            if button then
-                PU:UpdateBagButton(button, bagID, i)
+            for i = 1, MAX_CONTAINER_ITEMS do
+
+                local button =
+                    _G[
+                        frame:GetName()
+                        .. "Item"
+                        .. i
+                    ]
+
+
+                if button then
+
+                    PU:UpdateBagButton(
+                        button,
+                        bagID,
+                        i
+                    )
+
+                end
+
             end
+
         end
-    end)
+    )
+
 
     self.defaultHooked = true
 
-    print("|cff00ff00EasyGear:|r Blizzard bag support enabled.")
+
+    print(
+        "|cff00ff00EasyGear:|r Blizzard bag support enabled."
+    )
+
 end
 
 
+------------------------------------------------------------
+-- Bagnon
+------------------------------------------------------------
+
 function PU:HookBagnon()
+
     if self.bagnonHooked then
         return
     end
 
+
     if not Bagnon or not Bagnon.ItemSlot then
-        print("EasyGear: Bagnon.ItemSlot not found")
+
+        print(
+            "EasyGear: Bagnon.ItemSlot not found"
+        )
+
         return
+
     end
 
-    hooksecurefunc(Bagnon.ItemSlot, "Update", function(button)
-        local bag = button:GetBag()
-        local slot = button:GetID()
 
-        if bag and slot then
-            PU:UpdateBagButton(button, bag, slot)
+    hooksecurefunc(
+        Bagnon.ItemSlot,
+        "Update",
+        function(button)
+
+            local bag =
+                button:GetBag()
+
+            local slot =
+                button:GetID()
+
+
+            if bag and slot then
+
+                PU:UpdateBagButton(
+                    button,
+                    bag,
+                    slot
+                )
+
+            end
+
         end
-    end)
+    )
+
 
     self.bagnonHooked = true
-    print("|cff00ff00EasyGear:|r Bagnon support enabled.")
+
+
+    print(
+        "|cff00ff00EasyGear:|r Bagnon support enabled."
+    )
+
 end
+
 
 ------------------------------------------------------------
 -- Initialization
 ------------------------------------------------------------
 
 local eventFrame =
-CreateFrame("Frame")
+    CreateFrame("Frame")
 
 
 local function Initialize()
@@ -1031,19 +1215,30 @@ local function Initialize()
 
 
     if IsAddOnLoaded("ElvUI") then
+
         PU:HookElvUI()
+
     elseif IsAddOnLoaded("Bagnon") then
-	print("BAGNON DETECTED!")
+
+        print("BAGNON DETECTED!")
+
         PU:HookBagnon()
+
     else
+
         PU:HookDefaultBags()
+
     end
+
 
     PU:HookQuestRewards()
 
 end
 
 
+------------------------------------------------------------
+-- Events
+------------------------------------------------------------
 
 eventFrame:RegisterEvent(
     "ADDON_LOADED"
@@ -1054,16 +1249,20 @@ eventFrame:RegisterEvent(
 )
 
 
-
 eventFrame:SetScript(
-"OnEvent",
-function(_,event,addon)
+    "OnEvent",
+    function(_,event,addon)
 
-    eventFrame:SetScript("OnEvent", function(_, event)
+        eventFrame:SetScript(
+            "OnEvent",
+            function(_, event)
 
-        if event == "PLAYER_ENTERING_WORLD" then
-            Initialize()
-        end
+                if event == "PLAYER_ENTERING_WORLD" then
+                    Initialize()
+                end
 
-    end)
-end)
+            end
+        )
+
+    end
+)
