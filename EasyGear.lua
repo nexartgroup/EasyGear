@@ -102,25 +102,20 @@ function PU:GetStatWeights()
         ITEM_MOD_STAMINA_SHORT = 5
     }
 
-
-    ------------------------------------------------
-    -- Low level armor scaling
-    -- GetItemStats() returns this token:
-    -- RESISTANCE0_NAME = Armor
-    ------------------------------------------------
-
     if UnitLevel("player") <= 80 then
         result.RESISTANCE0_NAME = 5
     end
-
 
     return result
 
 end
 
 
-local timerFrame = CreateFrame("Frame")
+------------------------------------------------------------
+-- Small delayed callback helper
+------------------------------------------------------------
 
+local timerFrame = CreateFrame("Frame")
 
 function PU:After(delay, callback)
 
@@ -131,8 +126,11 @@ function PU:After(delay, callback)
         elapsed = elapsed + delta
 
         if elapsed >= delay then
+
             self:SetScript("OnUpdate", nil)
+
             callback()
+
         end
 
     end)
@@ -149,13 +147,6 @@ function PU:GetItemData(itemLink)
     if not itemLink then
         return nil
     end
-
-    --------------------------------------------------------
-    -- IMPORTANT:
-    -- The third return value from GetItemInfo() is quality.
-    --
-    -- Quality 7 = Heirloom
-    --------------------------------------------------------
 
     local _, _, quality, itemLevel, _, _, _, _, equipLoc =
         GetItemInfo(itemLink)
@@ -174,9 +165,11 @@ function PU:GetItemData(itemLink)
     local stats = GetItemStats(itemLink)
 
     if stats then
+
         for stat, value in pairs(stats) do
             data.stats[stat] = value
         end
+
     end
 
     return data
@@ -214,14 +207,12 @@ end
 
 
 ------------------------------------------------------------
--- Heirloom handling
+-- Heirloom detection
 --
--- Quality 7 = Heirloom.
+-- WotLK Quality 7 = Heirloom.
 --
--- An EQUIPPED heirloom is considered the best possible
--- item while the character is below level 80.
---
--- At level 80, heirlooms return to normal score comparison.
+-- Equipped heirlooms are considered best while the player
+-- is below level 80.
 ------------------------------------------------------------
 
 function PU:IsHeirloom(item)
@@ -229,12 +220,6 @@ function PU:IsHeirloom(item)
     if not item then
         return false
     end
-
-    --------------------------------------------------------
-    -- Level 80 is the maximum level for this addon.
-    -- Once the character reaches 80, heirlooms no longer
-    -- receive special treatment.
-    --------------------------------------------------------
 
     if UnitLevel("player") >= 80 then
         return false
@@ -254,11 +239,17 @@ function PU:DebugItem(itemLink)
     local item = self:GetItemData(itemLink)
 
     if not item then
-        print("Invalid item.")
+
+        print("EasyGear: Invalid item.")
+
         return
+
     end
 
-    print("========== ITEM ==========")
+    print("==============================")
+    print("EasyGear Item Debug")
+    print("==============================")
+
     print("Item:", itemLink)
     print("Level:", item.level)
     print("Quality:", item.quality)
@@ -275,16 +266,23 @@ function PU:DebugItem(itemLink)
     table.sort(keys)
 
     for _, stat in ipairs(keys) do
-        print(" ", stat, "=", item.stats[stat])
+
+        print(
+            " ",
+            stat,
+            "=",
+            item.stats[stat]
+        )
+
     end
 
-    print("==========================")
+    print("==============================")
 
 end
 
 
 ------------------------------------------------------------
--- Check if item can be equipped
+-- Class equipment compatibility
 ------------------------------------------------------------
 
 function PU:CanEquipItem(itemLink)
@@ -306,34 +304,34 @@ function PU:CanEquipItem(itemLink)
         return false
     end
 
-    -- Everything except armor and weapons is always usable
-    -- if itemType ~= "Rüstung"
-    -- and itemType ~= "Waffe" then
-    --     return true
-    -- end
-
-
     local class =
         select(2, UnitClass("player"))
 
     local allowed = {
 
         WARRIOR = {
+
             ["Stoff"] = true,
             ["Leder"] = true,
             ["Schwere Rüstung"] = true,
             ["Plattenrüstung"] = true,
             ["Verschiedenes"] = true,
+
             ["Dolche"] = true,
             ["Faustwaffen"] = true,
+
             ["Einhandäxte"] = true,
             ["Zweihandäxte"] = true,
+
             ["Einhandstreitkolben"] = true,
             ["Zweihandstreitkolben"] = true,
+
             ["Einhandschwerter"] = true,
             ["Zweihandschwerter"] = true,
+
             ["Stangenwaffen"] = true,
             ["Stäbe"] = true,
+
             ["Schusswaffen"] = true,
             ["Bogen"] = true,
             ["Armbrüste"] = true,
@@ -341,6 +339,7 @@ function PU:CanEquipItem(itemLink)
         },
 
         PALADIN = {
+
             ["Stoff"] = true,
             ["Leder"] = true,
             ["Schwere Rüstung"] = true,
@@ -348,38 +347,50 @@ function PU:CanEquipItem(itemLink)
 
             ["Einhandstreitkolben"] = true,
             ["Zweihandstreitkolben"] = true,
+
             ["Einhandschwerter"] = true,
             ["Zweihandschwerter"] = true,
+
             ["Stangenwaffen"] = true,
         },
 
         HUNTER = {
+
             ["Stoff"] = true,
             ["Leder"] = true,
             ["Schwere Rüstung"] = true,
             ["Verschiedenes"] = true,
-            ["Verschiedenes"] = true,
+
             ["Dolche"] = true,
+
             ["Einhandäxte"] = true,
             ["Zweihandäxte"] = true,
+
             ["Einhandschwerter"] = true,
             ["Zweihandschwerter"] = true,
+
             ["Stangenwaffen"] = true,
             ["Stäbe"] = true,
+
             ["Bogen"] = true,
             ["Armbrüste"] = true,
             ["Schusswaffen"] = true,
         },
 
         ROGUE = {
+
             ["Stoff"] = true,
             ["Leder"] = true,
             ["Verschiedenes"] = true,
+
             ["Dolche"] = true,
             ["Faustwaffen"] = true,
+
             ["Einhandäxte"] = true,
             ["Einhandstreitkolben"] = true,
+
             ["Einhandschwerter"] = true,
+
             ["Bogen"] = true,
             ["Armbrüste"] = true,
             ["Schusswaffen"] = true,
@@ -387,77 +398,88 @@ function PU:CanEquipItem(itemLink)
         },
 
         DRUID = {
+
             ["Stoff"] = true,
             ["Leder"] = true,
             ["Verschiedenes"] = true,
+
             ["Dolche"] = true,
             ["Faustwaffen"] = true,
+
             ["Einhandstreitkolben"] = true,
             ["Zweihandstreitkolben"] = true,
+
             ["Stangenwaffen"] = true,
             ["Stäbe"] = true,
-            ["Verschiedenes"] = true,
         },
 
         SHAMAN = {
+
             ["Stoff"] = true,
             ["Leder"] = true,
             ["Schwere Rüstung"] = true,
             ["Verschiedenes"] = true,
+
             ["Dolche"] = true,
             ["Faustwaffen"] = true,
+
             ["Einhandäxte"] = true,
             ["Zweihandäxte"] = true,
+
             ["Einhandstreitkolben"] = true,
             ["Zweihandstreitkolben"] = true,
+
             ["Stäbe"] = true,
         },
 
         PRIEST = {
+
             ["Stoff"] = true,
             ["Verschiedenes"] = true,
 
             ["Dolche"] = true,
             ["Einhandstreitkolben"] = true,
+
             ["Stäbe"] = true,
             ["Zauberstäbe"] = true,
         },
 
         MAGE = {
+
             ["Stoff"] = true,
             ["Verschiedenes"] = true,
 
             ["Dolche"] = true,
             ["Einhandschwerter"] = true,
+
             ["Stäbe"] = true,
             ["Zauberstäbe"] = true,
         },
 
         WARLOCK = {
+
             ["Stoff"] = true,
             ["Verschiedenes"] = true,
 
             ["Dolche"] = true,
             ["Einhandschwerter"] = true,
+
             ["Stäbe"] = true,
             ["Zauberstäbe"] = true,
         },
 
     }
 
-
-    local result =
+    return
         allowed[class]
         and allowed[class][itemSubType]
         or false
-
-    return result
 
 end
 
 
 ------------------------------------------------------------
--- Slot detection
+-- Equipment slot detection
 ------------------------------------------------------------
 
 function PU:GetEquipSlot(itemLink)
@@ -469,30 +491,43 @@ function PU:GetEquipSlot(itemLink)
         return nil
     end
 
-
     local slots = {
 
         INVTYPE_HEAD = 1,
         INVTYPE_NECK = 2,
         INVTYPE_SHOULDER = 3,
         INVTYPE_BODY = 4,
+
         INVTYPE_CHEST = 5,
         INVTYPE_ROBE = 5,
+
         INVTYPE_WAIST = 6,
         INVTYPE_LEGS = 7,
         INVTYPE_FEET = 8,
         INVTYPE_WRIST = 9,
         INVTYPE_HAND = 10,
 
-        INVTYPE_FINGER = {11,12},
-        INVTYPE_TRINKET = {13,14},
+        INVTYPE_FINGER = {
+            11,
+            12
+        },
+
+        INVTYPE_TRINKET = {
+            13,
+            14
+        },
 
         INVTYPE_CLOAK = 15,
 
-        INVTYPE_WEAPON = {16,17},
+        INVTYPE_WEAPON = {
+            16,
+            17
+        },
+
         INVTYPE_2HWEAPON = 16,
         INVTYPE_WEAPONMAINHAND = 16,
         INVTYPE_WEAPONOFFHAND = 17,
+
         INVTYPE_SHIELD = 17,
         INVTYPE_HOLDABLE = 17,
 
@@ -502,14 +537,13 @@ function PU:GetEquipSlot(itemLink)
 
     }
 
-
     return slots[equipLoc]
 
 end
 
 
 ------------------------------------------------------------
--- Quest reward comparison
+-- Quest reward scoring
 ------------------------------------------------------------
 
 function PU:GetQuestRewardScore(itemLink)
@@ -559,10 +593,14 @@ function PU:GetBestQuestReward()
 
     end
 
-    return bestButton,bestScore
+    return bestButton, bestScore
 
 end
 
+
+------------------------------------------------------------
+-- Quest indicator
+------------------------------------------------------------
 
 function PU:CreateQuestIndicator(button)
 
@@ -608,17 +646,17 @@ end
 
 function PU:UpdateQuestRewards()
 
-    local best,bestScore =
+    local best =
         self:GetBestQuestReward()
 
     if not best then
         return
     end
 
-    for i=1,GetNumQuestChoices() do
+    for i = 1, GetNumQuestChoices() do
 
         local button =
-            _G["QuestInfoItem"..i]
+            _G["QuestInfoItem" .. i]
 
         if button then
 
@@ -639,7 +677,7 @@ end
 
 function PU:HookQuestRewards()
 
-    if PU.questHooked then
+    if self.questHooked then
         return
     end
 
@@ -647,23 +685,23 @@ function PU:HookQuestRewards()
         "QuestInfo_Display",
         function()
 
-            PU:After(0.2, function()
-                PU:UpdateQuestRewards()
-            end)
+            self:After(
+                0.2,
+                function()
+                    self:UpdateQuestRewards()
+                end
+            )
 
         end
     )
 
-    PU.questHooked=true
+    self.questHooked = true
 
 end
 
 
 ------------------------------------------------------------
--- Simple upgrade check
---
--- Equipped Quality 7 items (Heirlooms) are considered
--- better than every normal item until level 80.
+-- Upgrade comparison
 ------------------------------------------------------------
 
 function PU:IsUpgrade(itemLink)
@@ -672,14 +710,12 @@ function PU:IsUpgrade(itemLink)
         return false, 0, 0
     end
 
-
     local newItem =
         self:GetItemData(itemLink)
 
     if not newItem then
         return false, 0, 0
     end
-
 
     local slot =
         self:GetEquipSlot(itemLink)
@@ -688,21 +724,11 @@ function PU:IsUpgrade(itemLink)
         return false, 0, 0
     end
 
-
-    --------------------------------------------------------
-    -- Compare one equipment slot.
-    --------------------------------------------------------
-
     local function Compare(oldLink)
-
-        ----------------------------------------------------
-        -- Empty slot.
-        ----------------------------------------------------
 
         if not oldLink then
             return true, 0, 0
         end
-
 
         local oldItem =
             self:GetItemData(oldLink)
@@ -711,51 +737,39 @@ function PU:IsUpgrade(itemLink)
             return false, 0, 0
         end
 
-
         local newValue =
             self:GetItemScore(newItem)
-
 
         local oldValue =
             self:GetItemScore(oldItem)
 
-
         ----------------------------------------------------
-        -- Heirloom protection.
-        --
-        -- If the currently equipped item is Quality 7 and
-        -- the character is below level 80, it is treated
-        -- as infinitely better than a normal replacement.
+        -- Equipped Quality 7 heirloom is considered best
+        -- until the character reaches level 80.
         ----------------------------------------------------
 
         if self:IsHeirloom(oldItem) then
 
             return false,
-                   newValue,
-                   math.huge
+                newValue,
+                math.huge
 
         end
 
-
-        return newValue > oldValue,
-               newValue,
-               oldValue
+        return
+            newValue > oldValue,
+            newValue,
+            oldValue
 
     end
 
-
     --------------------------------------------------------
-    -- Items that can occupy multiple slots:
-    --
-    -- Rings
-    -- Trinkets
-    -- One-handed weapons
+    -- Multi-slot item
     --------------------------------------------------------
 
     if type(slot) == "table" then
 
         local worstOld = math.huge
-
 
         for _, s in ipairs(slot) do
 
@@ -765,12 +779,6 @@ function PU:IsUpgrade(itemLink)
                     s
                 )
 
-
-            ------------------------------------------------
-            -- Empty slot means the new item can be equipped
-            -- immediately.
-            ------------------------------------------------
-
             if not oldLink then
 
                 worstOld = 0
@@ -778,27 +786,18 @@ function PU:IsUpgrade(itemLink)
 
             end
 
-
             local old =
                 self:GetItemData(oldLink)
-
 
             if old then
 
                 local value
-
-
-                ------------------------------------------------
-                -- Equipped heirloom is considered infinitely
-                -- valuable while below level 80.
-                ------------------------------------------------
 
                 if self:IsHeirloom(old) then
                     value = math.huge
                 else
                     value = self:GetItemScore(old)
                 end
-
 
                 if value < worstOld then
                     worstOld = value
@@ -808,25 +807,22 @@ function PU:IsUpgrade(itemLink)
 
         end
 
-
         if worstOld == math.huge then
             worstOld = 0
         end
 
-
         local newValue =
             self:GetItemScore(newItem)
 
-
-        return newValue > worstOld,
-               newValue,
-               worstOld
+        return
+            newValue > worstOld,
+            newValue,
+            worstOld
 
     end
 
-
     --------------------------------------------------------
-    -- Single equipment slot.
+    -- Single slot
     --------------------------------------------------------
 
     return Compare(
@@ -840,7 +836,7 @@ end
 
 
 ------------------------------------------------------------
--- ElvUI indicator
+-- Bag upgrade indicator
 ------------------------------------------------------------
 
 function PU:CreateUpgradeIndicator(button)
@@ -881,10 +877,16 @@ function PU:CreateUpgradeIndicator(button)
         20
     )
 
-    icon:SetTexCoord(0,1,0,1)
+    icon:SetTexCoord(
+        0,
+        1,
+        0,
+        1
+    )
 
-    -- Remove ADD blending
-    icon:SetBlendMode("BLEND")
+    icon:SetBlendMode(
+        "BLEND"
+    )
 
     button.PUUpgradeIcon = icon
 
@@ -897,42 +899,35 @@ function PU:UpdateBagButton(button, bagID, slotID)
         return
     end
 
-
     self:CreateUpgradeIndicator(button)
-
 
     local link
 
-
-    --------------------------------------------------------
-    -- Bagnon
-    --------------------------------------------------------
-
     if button.GetItem then
-        link = button:GetItem()
 
-
-    --------------------------------------------------------
-    -- Blizzard / ElvUI
-    --------------------------------------------------------
+        link =
+            button:GetItem()
 
     else
-        link = GetContainerItemLink(
-            bagID,
-            slotID
-        )
-    end
 
+        link =
+            GetContainerItemLink(
+                bagID,
+                slotID
+            )
+
+    end
 
     if not link then
-        button.PUUpgradeIcon:Hide()
-        return
-    end
 
+        button.PUUpgradeIcon:Hide()
+
+        return
+
+    end
 
     local upgrade =
         self:IsUpgrade(link)
-
 
     if upgrade then
 
@@ -954,7 +949,7 @@ end
 
 
 ------------------------------------------------------------
--- ElvUI hook
+-- ElvUI
 ------------------------------------------------------------
 
 function PU:HookElvUI()
@@ -963,20 +958,16 @@ function PU:HookElvUI()
         return
     end
 
-
     if not ElvUI then
         return
     end
 
-
     local E =
         unpack(ElvUI)
-
 
     if not E then
         return
     end
-
 
     local Bags =
         E:GetModule(
@@ -984,19 +975,16 @@ function PU:HookElvUI()
             true
         )
 
-
     if not Bags then
         return
     end
 
-
     hooksecurefunc(
         Bags,
         "UpdateSlot",
-        function(_,frame,bagID,slotID)
+        function(_, frame, bagID, slotID)
 
             local button
-
 
             if frame.Bags
             and frame.Bags[bagID] then
@@ -1005,7 +993,6 @@ function PU:HookElvUI()
                     frame.Bags[bagID][slotID]
 
             end
-
 
             if button then
 
@@ -1020,9 +1007,7 @@ function PU:HookElvUI()
         end
     )
 
-
     self.elvHooked = true
-
 
     print(
         "|cff00ff00EasyGear:|r ElvUI bag support enabled."
@@ -1032,19 +1017,580 @@ end
 
 
 ------------------------------------------------------------
--- Slash command
+-- ==========================================================
+-- EGUP - EASY GEAR UPGRADE PACKAGE
+-- ==========================================================
+--
+-- /EGUP
+--
+-- Target a player and run /EGUP.
+--
+-- EasyGear checks the TARGET'S class and sends the
+-- appropriate WotLK 3.3.5a heirloom .additem commands.
+--
+-- IMPORTANT:
+--
+-- This is intended for GM/private-server environments.
+--
+-- The addon itself cannot directly call the server's
+-- AddItem API. It sends normal GM commands through chat.
+--
+-- If the server does not execute addon-generated GM
+-- commands, EasyGear prints the commands instead.
 ------------------------------------------------------------
 
-SLASH_EasyGear1="/puc"
+
+------------------------------------------------------------
+-- WotLK 3.3.5a Heirloom item IDs
+------------------------------------------------------------
+
+local EGUP_ITEMS = {
+
+    --------------------------------------------------------
+    -- Universal leveling trinkets
+    --
+    -- Two copies of each because a character has two
+    -- trinket slots.
+    --------------------------------------------------------
+
+    TRINKETS = {
+
+        {
+            id = 42991,
+            count = 2,
+            name = "Swift Hand of Justice"
+        },
+
+        {
+            id = 42992,
+            count = 2,
+            name = "Discerning Eye of the Beast"
+        },
+
+    },
 
 
-SlashCmdList["EasyGear"] =
-function(msg)
+    --------------------------------------------------------
+    -- Dread Pirate Ring
+    --
+    -- Only one can be equipped because it is unique-equipped.
+    --------------------------------------------------------
 
-    if not msg or msg == "" then
+    RING = {
+
+        id = 50255,
+        count = 1,
+        name = "Dread Pirate Ring"
+
+    },
+
+
+    --------------------------------------------------------
+    -- CLOTH
+    --------------------------------------------------------
+
+    CLOTH = {
+
+        CHEST = {
+            id = 48691,
+            count = 1,
+            name = "Tattered Dreadmist Robe"
+        },
+
+        SHOULDERS = {
+            id = 42985,
+            count = 1,
+            name = "Tattered Dreadmist Mantle"
+        },
+
+        WEAPON = {
+            id = 42947,
+            count = 1,
+            name = "Dignified Headmaster's Charge"
+        },
+
+    },
+
+
+    --------------------------------------------------------
+    -- LEATHER - AGILITY
+    --
+    -- Rogue / physical leather leveling package.
+    --------------------------------------------------------
+
+    LEATHER_AGI = {
+
+        CHEST = {
+            id = 48689,
+            count = 1,
+            name = "Stained Shadowcraft Tunic"
+        },
+
+        SHOULDERS = {
+            id = 42952,
+            count = 1,
+            name = "Stained Shadowcraft Spaulders"
+        },
+
+        DAGGER = {
+            id = 42944,
+            count = 1,
+            name = "Balanced Heartseeker"
+        },
+
+        SWORD = {
+            id = 42945,
+            count = 1,
+            name = "Venerable Dal'Rend's Sacred Charge"
+        },
+
+        THRASH_BLADE = {
+            id = 44096,
+            count = 1,
+            name = "Battleworn Thrash Blade"
+        },
+
+        OFFHAND_DAGGER = {
+            id = 44091,
+            count = 1,
+            name = "Sharpened Scarlet Kris"
+        },
+
+    },
+
+
+    --------------------------------------------------------
+    -- LEATHER - CASTER / RESTORATION
+    --------------------------------------------------------
+
+    LEATHER_INT = {
+
+        CHEST = {
+            id = 48687,
+            count = 1,
+            name = "Preened Ironfeather Breastplate"
+        },
+
+        SHOULDERS = {
+            id = 42984,
+            count = 1,
+            name = "Preened Ironfeather Shoulders"
+        },
+
+        WEAPON = {
+            id = 42947,
+            count = 1,
+            name = "Dignified Headmaster's Charge"
+        },
+
+    },
+
+
+    --------------------------------------------------------
+    -- MAIL - PHYSICAL
+    --------------------------------------------------------
+
+    MAIL_AGI = {
+
+        CHEST = {
+            id = 48677,
+            count = 1,
+            name = "Champion's Deathdealer Breastplate"
+        },
+
+        SHOULDERS = {
+            id = 42950,
+            count = 1,
+            name = "Champion Herod's Shoulder"
+        },
+
+        WEAPON = {
+            id = 42945,
+            count = 1,
+            name = "Venerable Dal'Rend's Sacred Charge"
+        },
+
+        MACE = {
+            id = 48716,
+            count = 1,
+            name = "Venerable Mass of McGowan"
+        },
+
+        AXE = {
+            id = 42946,
+            count = 1,
+            name = "Charmed Ancient Bone Bow"
+        },
+
+    },
+
+
+    --------------------------------------------------------
+    -- MAIL - CASTER
+    --------------------------------------------------------
+
+    MAIL_INT = {
+
+        CHEST = {
+            id = 48683,
+            count = 1,
+            name = "Mystical Vest of Elements"
+        },
+
+        SHOULDERS = {
+            id = 42951,
+            count = 1,
+            name = "Mystical Pauldrons of Elements"
+        },
+
+        WEAPON = {
+            id = 42948,
+            count = 1,
+            name = "Devout Aurastone Hammer"
+        },
+
+    },
+
+
+    --------------------------------------------------------
+    -- PLATE
+    --------------------------------------------------------
+
+    PLATE = {
+
+        CHEST = {
+            id = 48685,
+            count = 1,
+            name = "Polished Breastplate of Valor"
+        },
+
+        SHOULDERS = {
+            id = 42949,
+            count = 1,
+            name = "Polished Spaulders of Valor"
+        },
+
+        WEAPON = {
+            id = 44092,
+            count = 1,
+            name = "Reforged Truesilver Champion"
+        },
+
+    },
+
+}
+
+
+------------------------------------------------------------
+-- Build a list of items for the selected class
+------------------------------------------------------------
+
+function PU:GetEGUPPackage(class)
+
+    local package = {}
+
+
+    --------------------------------------------------------
+    -- Add helper
+    --------------------------------------------------------
+
+    local function Add(item)
+
+        if not item then
+            return
+        end
+
+        table.insert(
+            package,
+            {
+                id = item.id,
+                count = item.count or 1,
+                name = item.name
+            }
+        )
+
+    end
+
+
+    --------------------------------------------------------
+    -- Universal items
+    --------------------------------------------------------
+
+    for _, item in ipairs(EGUP_ITEMS.TRINKETS) do
+        Add(item)
+    end
+
+    Add(EGUP_ITEMS.RING)
+
+
+    --------------------------------------------------------
+    -- Class-specific items
+    --------------------------------------------------------
+
+    if class == "ROGUE" then
+
+        ----------------------------------------------------
+        -- Leather only.
+        --
+        -- No mail.
+        -- No plate.
+        -- No heavy armor.
+        ----------------------------------------------------
+
+        Add(EGUP_ITEMS.LEATHER_AGI.CHEST)
+        Add(EGUP_ITEMS.LEATHER_AGI.SHOULDERS)
+
+        Add(EGUP_ITEMS.LEATHER_AGI.DAGGER)
+        Add(EGUP_ITEMS.LEATHER_AGI.SWORD)
+        Add(EGUP_ITEMS.LEATHER_AGI.THRASH_BLADE)
+        Add(EGUP_ITEMS.LEATHER_AGI.OFFHAND_DAGGER)
+
+
+    elseif class == "DRUID" then
+
+        ----------------------------------------------------
+        -- Leather only.
+        ----------------------------------------------------
+
+        Add(EGUP_ITEMS.LEATHER_INT.CHEST)
+        Add(EGUP_ITEMS.LEATHER_INT.SHOULDERS)
+
+        Add(EGUP_ITEMS.LEATHER_AGI.CHEST)
+        Add(EGUP_ITEMS.LEATHER_AGI.SHOULDERS)
+
+        Add(EGUP_ITEMS.LEATHER_INT.WEAPON)
+
+
+    elseif class == "HUNTER" then
+
+        ----------------------------------------------------
+        -- Mail physical.
+        ----------------------------------------------------
+
+        Add(EGUP_ITEMS.MAIL_AGI.CHEST)
+        Add(EGUP_ITEMS.MAIL_AGI.SHOULDERS)
+
+        Add(EGUP_ITEMS.MAIL_AGI.AXE)
+
+
+    elseif class == "SHAMAN" then
+
+        ----------------------------------------------------
+        -- Enhancement / physical leveling package.
+        ----------------------------------------------------
+
+        Add(EGUP_ITEMS.MAIL_AGI.CHEST)
+        Add(EGUP_ITEMS.MAIL_AGI.SHOULDERS)
+
+        Add(EGUP_ITEMS.MAIL_AGI.MACE)
+
+        ----------------------------------------------------
+        -- Also provide the caster weapon.
+        ----------------------------------------------------
+
+        Add(EGUP_ITEMS.MAIL_INT.WEAPON)
+
+
+    elseif class == "WARRIOR" then
+
+        Add(EGUP_ITEMS.PLATE.CHEST)
+        Add(EGUP_ITEMS.PLATE.SHOULDERS)
+
+        Add(EGUP_ITEMS.PLATE.WEAPON)
+
+        ----------------------------------------------------
+        -- One-hand weapon option.
+        ----------------------------------------------------
+
+        Add(EGUP_ITEMS.LEATHER_AGI.SWORD)
+        Add(EGUP_ITEMS.MAIL_AGI.MACE)
+
+
+    elseif class == "PALADIN" then
+
+        Add(EGUP_ITEMS.PLATE.CHEST)
+        Add(EGUP_ITEMS.PLATE.SHOULDERS)
+
+        Add(EGUP_ITEMS.PLATE.WEAPON)
+
+        Add(EGUP_ITEMS.MAIL_INT.WEAPON)
+
+
+    elseif class == "PRIEST" then
+
+        Add(EGUP_ITEMS.CLOTH.CHEST)
+        Add(EGUP_ITEMS.CLOTH.SHOULDERS)
+
+        Add(EGUP_ITEMS.CLOTH.WEAPON)
+
+
+    elseif class == "MAGE" then
+
+        Add(EGUP_ITEMS.CLOTH.CHEST)
+        Add(EGUP_ITEMS.CLOTH.SHOULDERS)
+
+        Add(EGUP_ITEMS.CLOTH.WEAPON)
+
+
+    elseif class == "WARLOCK" then
+
+        Add(EGUP_ITEMS.CLOTH.CHEST)
+        Add(EGUP_ITEMS.CLOTH.SHOULDERS)
+
+        Add(EGUP_ITEMS.CLOTH.WEAPON)
+
+    end
+
+
+    return package
+
+end
+
+
+------------------------------------------------------------
+-- Print EGUP package
+------------------------------------------------------------
+
+function PU:PrintEGUPPackage(class, targetName)
+
+    local package =
+        self:GetEGUPPackage(class)
+
+    print(
+        "|cff00ff00EasyGear EGUP|r"
+    )
+
+    print(
+        "Target:",
+        targetName or "Unknown"
+    )
+
+    print(
+        "Class:",
+        class or "Unknown"
+    )
+
+    print(
+        "Items:"
+    )
+
+    for _, item in ipairs(package) do
 
         print(
-            "Usage: /puc itemlink"
+            " .additem",
+            item.id,
+            item.count,
+            "--",
+            item.name
+        )
+
+    end
+
+end
+
+
+------------------------------------------------------------
+-- EGUP command sender
+------------------------------------------------------------
+
+PU.EGUPQueue = {}
+PU.EGUPRunning = false
+
+
+------------------------------------------------------------
+-- Send one GM command
+------------------------------------------------------------
+
+function PU:SendEGUPCommand(command)
+
+    --------------------------------------------------------
+    -- Send the GM command as normal chat.
+    --
+    -- AzerothCore/Trinity-style servers can process
+    -- .additem as an in-game GM command.
+    --------------------------------------------------------
+
+    SendChatMessage(
+        command,
+        "SAY"
+    )
+
+end
+
+
+------------------------------------------------------------
+-- Process the EGUP queue
+------------------------------------------------------------
+
+function PU:ProcessEGUPQueue()
+
+    if self.EGUPRunning then
+        return
+    end
+
+    if #self.EGUPQueue == 0 then
+        return
+    end
+
+    self.EGUPRunning = true
+
+    local index = 1
+
+    local function SendNext()
+
+        if index > #self.EGUPQueue then
+
+            self.EGUPQueue = {}
+            self.EGUPRunning = false
+
+            print(
+                "|cff00ff00EasyGear:|r EGUP completed."
+            )
+
+            return
+
+        end
+
+        local command =
+            self.EGUPQueue[index]
+
+        index = index + 1
+
+        self:SendEGUPCommand(command)
+
+        ----------------------------------------------------
+        -- Small delay between commands.
+        --
+        -- This avoids dumping a large number of GM commands
+        -- into the server connection at once.
+        ----------------------------------------------------
+
+        self:After(
+            0.35,
+            SendNext
+        )
+
+    end
+
+    SendNext()
+
+end
+
+
+------------------------------------------------------------
+-- Execute EGUP
+------------------------------------------------------------
+
+function PU:RunEGUP()
+
+    --------------------------------------------------------
+    -- We need a selected player.
+    --------------------------------------------------------
+
+    if not UnitExists("target") then
+
+        print(
+            "|cffff0000EasyGear EGUP:|r Target a player first."
         )
 
         return
@@ -1052,7 +1598,173 @@ function(msg)
     end
 
 
-    local upgrade,newScore,oldScore =
+    if not UnitIsPlayer("target") then
+
+        print(
+            "|cffff0000EasyGear EGUP:|r Your target is not a player."
+        )
+
+        return
+
+    end
+
+
+    local targetName =
+        UnitName("target")
+
+    if not targetName then
+
+        print(
+            "|cffff0000EasyGear EGUP:|r Could not determine target name."
+        )
+
+        return
+
+    end
+
+
+    --------------------------------------------------------
+    -- IMPORTANT:
+    --
+    -- UnitClass("target") returns the selected player's
+    -- class, not the GM's class.
+    --------------------------------------------------------
+
+    local _, class =
+        UnitClass("target")
+
+
+    if not class then
+
+        print(
+            "|cffff0000EasyGear EGUP:|r Could not determine target class."
+        )
+
+        return
+
+    end
+
+
+    local package =
+        self:GetEGUPPackage(class)
+
+
+    if not package
+    or #package == 0 then
+
+        print(
+            "|cffff0000EasyGear EGUP:|r No heirloom package configured for",
+            class
+        )
+
+        return
+
+    end
+
+
+    --------------------------------------------------------
+    -- Clear old queue.
+    --------------------------------------------------------
+
+    self.EGUPQueue = {}
+
+
+    --------------------------------------------------------
+    -- Build commands.
+    --
+    -- We explicitly specify the player name so that the
+    -- command targets the selected character even if the
+    -- server command parser does not use the current target.
+    --------------------------------------------------------
+
+    for _, item in ipairs(package) do
+
+        local command =
+            ".additem "
+            .. targetName
+            .. " "
+            .. item.id
+            .. " "
+            .. item.count
+
+        table.insert(
+            self.EGUPQueue,
+            command
+        )
+
+    end
+
+
+    --------------------------------------------------------
+    -- Display summary.
+    --------------------------------------------------------
+
+    print(
+        "|cff00ff00EasyGear EGUP|r"
+    )
+
+    print(
+        "Giving WotLK heirlooms to:",
+        targetName
+    )
+
+    print(
+        "Class:",
+        class
+    )
+
+    print(
+        "Items:",
+        #package
+    )
+
+
+    --------------------------------------------------------
+    -- Start sending.
+    --------------------------------------------------------
+
+    self:ProcessEGUPQueue()
+
+end
+
+
+------------------------------------------------------------
+-- /EGUP
+------------------------------------------------------------
+
+SLASH_EGUP1 = "/EGUP"
+
+SlashCmdList["EGUP"] =
+function(msg)
+
+    PU:RunEGUP()
+
+end
+
+
+------------------------------------------------------------
+-- Existing /eg command
+------------------------------------------------------------
+
+SLASH_EasyGear1 = "/eg"
+
+SlashCmdList["EasyGear"] =
+function(msg)
+
+    if not msg or msg == "" then
+
+        print(
+            "Usage: /eg itemlink"
+        )
+
+        return
+
+    end
+
+
+    local upgrade,
+          newScore,
+          oldScore =
         PU:IsUpgrade(msg)
 
 
@@ -1079,7 +1791,7 @@ end
 
 
 ------------------------------------------------------------
--- Default Blizzard bags
+-- Blizzard Bags
 ------------------------------------------------------------
 
 function PU:HookDefaultBags()
@@ -1088,14 +1800,12 @@ function PU:HookDefaultBags()
         return
     end
 
-
     hooksecurefunc(
         "ContainerFrame_Update",
         function(frame)
 
             local bagID =
                 frame:GetID()
-
 
             for i = 1, MAX_CONTAINER_ITEMS do
 
@@ -1105,7 +1815,6 @@ function PU:HookDefaultBags()
                         .. "Item"
                         .. i
                     ]
-
 
                 if button then
 
@@ -1122,9 +1831,7 @@ function PU:HookDefaultBags()
         end
     )
 
-
     self.defaultHooked = true
-
 
     print(
         "|cff00ff00EasyGear:|r Blizzard bag support enabled."
@@ -1143,8 +1850,8 @@ function PU:HookBagnon()
         return
     end
 
-
-    if not Bagnon or not Bagnon.ItemSlot then
+    if not Bagnon
+    or not Bagnon.ItemSlot then
 
         print(
             "EasyGear: Bagnon.ItemSlot not found"
@@ -1153,7 +1860,6 @@ function PU:HookBagnon()
         return
 
     end
-
 
     hooksecurefunc(
         Bagnon.ItemSlot,
@@ -1165,7 +1871,6 @@ function PU:HookBagnon()
 
             local slot =
                 button:GetID()
-
 
             if bag and slot then
 
@@ -1180,9 +1885,7 @@ function PU:HookBagnon()
         end
     )
 
-
     self.bagnonHooked = true
-
 
     print(
         "|cff00ff00EasyGear:|r Bagnon support enabled."
@@ -1205,22 +1908,26 @@ local function Initialize()
         return
     end
 
-
     PU.loaded = true
 
-
     print(
-        "|cff00ff00EasyGear loaded.|r Basic item comparison."
+        "|cff00ff00EasyGear loaded.|r"
     )
 
+    print(
+        "Use |cffffff00/EGUP|r while targeting a player to give class-appropriate WotLK heirlooms."
+    )
+
+
+    --------------------------------------------------------
+    -- Bag integration
+    --------------------------------------------------------
 
     if IsAddOnLoaded("ElvUI") then
 
         PU:HookElvUI()
 
     elseif IsAddOnLoaded("Bagnon") then
-
-        print("BAGNON DETECTED!")
 
         PU:HookBagnon()
 
@@ -1230,6 +1937,10 @@ local function Initialize()
 
     end
 
+
+    --------------------------------------------------------
+    -- Quest integration
+    --------------------------------------------------------
 
     PU:HookQuestRewards()
 
@@ -1251,18 +1962,13 @@ eventFrame:RegisterEvent(
 
 eventFrame:SetScript(
     "OnEvent",
-    function(_,event,addon)
+    function(_, event)
 
-        eventFrame:SetScript(
-            "OnEvent",
-            function(_, event)
+        if event == "PLAYER_ENTERING_WORLD" then
 
-                if event == "PLAYER_ENTERING_WORLD" then
-                    Initialize()
-                end
+            Initialize()
 
-            end
-        )
+        end
 
     end
 )

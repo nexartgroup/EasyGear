@@ -1,53 +1,591 @@
 # EasyGear
 
-**EasyGear** is a lightweight gear comparison and recommendation addon for **World of Warcraft 3.3.5a**.
+EasyGear is a lightweight gear evaluation and GM utility addon for **World of Warcraft 3.3.5a**.
 
-It evaluates equipment using class-specific stat weights and helps you quickly identify potential upgrades in your bags and quest rewards. EasyGear also recognizes **Heirloom items (Quality 7)** and protects equipped heirlooms from being considered replaceable until the character reaches level 80.
+It provides two main features:
+
+1. **Gear evaluation** — identifies potential upgrades based on class-specific stat weights.
+2. **EGUP** — gives a targeted player a class-appropriate collection of WotLK heirloom items through GM `.additem` commands.
 
 > **Target client:** World of Warcraft 3.3.5a
 > **Interface:** `30300`
 
+---
+
 ## Features
 
-* **Automatic item scoring**
+### Gear Evaluation
 
-  * Calculates a score from item level and relevant stats.
-  * Uses class-specific stat weights.
-  * Includes armor weighting for characters at or below level 80.
+* Calculates item scores from item level and stats.
+* Uses class-specific stat weights.
+* Compares items against currently equipped gear.
+* Handles equipment with multiple possible slots.
+* Detects empty equipment slots.
+* Supports quest reward comparison.
+* Supports Blizzard Bags.
+* Supports ElvUI Bags.
+* Supports Bagnon.
+* Provides the `/eg` manual comparison command.
 
-* **Upgrade detection**
+### Heirloom Handling
 
-  * Compares items against currently equipped gear.
-  * Handles equipment that can occupy multiple slots, such as rings, trinkets, and one-handed weapons.
-  * Detects empty equipment slots as potential upgrades.
+EasyGear recognizes **Quality 7** items as Heirlooms.
 
-* **Heirloom protection**
+While the character is below level 80:
 
-  * Recognizes **Quality 7** items as Heirlooms.
-  * An equipped Heirloom is treated as the **best possible item** while the character is below level 80.
-  * Normal gear will therefore not be recommended as a replacement for an equipped Heirloom.
-  * Once the character reaches level 80, Heirlooms are evaluated using the normal gear score again.
+```lua
+itemQuality == 7
+```
 
-* **Bag upgrade indicators**
+is treated as an equipped best-in-slot heirloom.
 
-  * Displays a green checkmark on items considered upgrades.
-  * Supports Blizzard's default bags.
-  * Supports ElvUI bags.
-  * Supports Bagnon.
+Consequently, a normal leveling item will not be recommended as an upgrade over an equipped heirloom.
 
-* **Quest reward recommendations**
+At level 80, this special behavior stops and heirlooms are evaluated normally according to their item level and stats.
 
-  * Evaluates available quest rewards.
-  * Identifies the highest-scoring equippable reward.
-  * Marks the recommended reward with a green indicator.
+---
 
-* **Manual item comparison**
+# EGUP
 
-  * Allows an item to be manually checked with `/puc`.
+## What is EGUP?
 
-## Supported Classes
+**EGUP** stands for **EasyGear Upgrade Package**.
 
-EasyGear currently provides stat weights for:
+It is a GM convenience command designed for WotLK 3.3.5a private servers.
+
+A GM targets a player and enters:
+
+```text
+/EGUP
+```
+
+EasyGear then:
+
+1. Detects the selected player's class.
+2. Builds the appropriate heirloom package.
+3. Adds the appropriate WotLK heirlooms to the player.
+4. Adds two copies of dual-slot trinkets.
+5. Adds the Dread Pirate Ring.
+6. Adds class-appropriate armor.
+7. Adds appropriate weapons.
+8. Avoids giving armor types that are inappropriate for the class.
+
+The command is intended for servers where `.additem` is available to the GM.
+
+---
+
+## Basic Usage
+
+Target the player who should receive the heirlooms:
+
+```text
+Target: ExamplePlayer
+```
+
+Then type:
+
+```text
+/EGUP
+```
+
+EasyGear detects the target's class automatically.
+
+Example:
+
+```text
+EasyGear EGUP
+Giving WotLK heirlooms to: ExamplePlayer
+Class: ROGUE
+Items: 10
+```
+
+The addon then processes the required `.additem` commands with a short delay between commands.
+
+---
+
+# Class Selection
+
+EGUP uses the **target player's class**, not the GM's class.
+
+For example:
+
+```lua
+local _, class = UnitClass("target")
+```
+
+This means a GM can target any player and use:
+
+```text
+/EGUP
+```
+
+without changing their own character.
+
+---
+
+# Rogue Example
+
+For a Rogue, EGUP prioritizes **leather armor and Rogue-compatible weapons**.
+
+The package includes leather chest and shoulders, appropriate daggers/swords, and leveling weapons.
+
+It does **not** intentionally give the Rogue:
+
+* Plate armor
+* Mail armor
+* Heavy armor intended for Warriors/Paladins
+* Unusable caster equipment
+
+The Rogue package can contain:
+
+```text
+Stained Shadowcraft Tunic
+Stained Shadowcraft Spaulders
+Balanced Heartseeker
+Venerable Dal'Rend's Sacred Charge
+Battleworn Thrash Blade
+Sharpened Scarlet Kris
+```
+
+along with the common trinkets and ring.
+
+---
+
+# Trinkets
+
+Characters have two trinket slots.
+
+EGUP therefore adds two copies of each configured leveling trinket.
+
+For example:
+
+```text
+Swift Hand of Justice ×2
+Discerning Eye of the Beast ×2
+```
+
+This allows both trinket slots to be filled when the item is not prevented by server-side uniqueness restrictions.
+
+If your server treats a particular trinket as unique-equipped, the server may reject the second copy.
+
+---
+
+# Ring
+
+EGUP also adds:
+
+```text
+Dread Pirate Ring
+```
+
+The ring is added once because it is intended to occupy a single unique-equipped ring slot.
+
+The character can obtain additional rings through other server-specific methods if required.
+
+---
+
+# Armor Selection
+
+EGUP attempts to keep armor appropriate to the target's class.
+
+## Cloth
+
+Cloth packages are used for:
+
+* Priest
+* Mage
+* Warlock
+
+The package contains the relevant cloth heirloom chest and shoulder items.
+
+## Leather
+
+Leather packages are used for:
+
+* Rogue
+* Druid
+
+Rogues receive the physical/leather leveling package.
+
+Druids can receive leather caster and physical leveling equipment where appropriate.
+
+## Mail
+
+Mail packages are used for:
+
+* Hunter
+* Shaman
+
+Hunters receive physical/agility-oriented equipment.
+
+Shamans can receive physical and caster-compatible weapon options.
+
+## Plate
+
+Plate packages are used for:
+
+* Warrior
+* Paladin
+
+These classes receive the appropriate plate chest and shoulder heirlooms plus suitable weapons.
+
+---
+
+# Weapon Selection
+
+Weapon selection is class dependent.
+
+Examples include:
+
+### Rogue
+
+```text
+Daggers
+Swords
+Off-hand weapons
+```
+
+### Hunter
+
+```text
+Ranged weapon
+```
+
+### Priest / Mage / Warlock
+
+```text
+Caster weapon
+```
+
+### Warrior / Paladin
+
+```text
+Two-handed / melee weapon
+```
+
+### Shaman
+
+```text
+One-handed melee/caster-compatible weapons
+```
+
+The current implementation is designed as a practical heirloom distribution package rather than a full combat simulator.
+
+---
+
+# GM Command Compatibility
+
+EGUP generates commands equivalent to:
+
+```text
+.additem PlayerName ItemID Count
+```
+
+For example:
+
+```text
+.additem ExamplePlayer 42991 2
+```
+
+The addon sends these commands through the player's normal chat connection.
+
+Your server must allow the GM to use `.additem`.
+
+Typical TrinityCore/AzerothCore-style servers require an appropriate GM/security level.
+
+If your server does not allow addon-generated GM commands, the commands will need to be executed manually through the server's GM command interface.
+
+---
+
+# Important Server Difference
+
+The exact heirloom item IDs can differ on custom/private servers.
+
+The IDs included in `EasyGear.lua` are intended for the standard **WotLK 3.3.5a heirloom item database**.
+
+If your server has:
+
+* Custom item IDs
+* Modified heirlooms
+* Custom vendors
+* Different item templates
+* Replaced heirloom items
+
+you should change the IDs in:
+
+```lua
+EGUP_ITEMS
+```
+
+For example:
+
+```lua
+ROGUE = {
+    CHEST = {
+        id = 48689,
+        count = 1
+    }
+}
+```
+
+---
+
+# Configuration
+
+The EGUP item database is located near the bottom of `EasyGear.lua`:
+
+```lua
+local EGUP_ITEMS = {
+    ...
+}
+```
+
+This table controls what items are given to each class.
+
+You can change:
+
+```lua
+id
+```
+
+to the item entry used by your server.
+
+You can also change:
+
+```lua
+count
+```
+
+to control how many copies are added.
+
+Example:
+
+```lua
+{
+    id = 42991,
+    count = 2,
+    name = "Swift Hand of Justice"
+}
+```
+
+means:
+
+```text
+Item ID: 42991
+Amount: 2
+```
+
+---
+
+# Adding Another Heirloom
+
+To add an item to a class package, first define it in `EGUP_ITEMS`.
+
+Example:
+
+```lua
+MY_WEAPON = {
+    id = 12345,
+    count = 1,
+    name = "My Heirloom Weapon"
+}
+```
+
+Then add it to the desired class:
+
+```lua
+elseif class == "ROGUE" then
+
+    Add(EGUP_ITEMS.MY_WEAPON)
+```
+
+When `/EGUP` is used on a Rogue, the item will then be added.
+
+---
+
+# `/eg`
+
+EasyGear also provides the original manual comparison command:
+
+```text
+/eg itemlink
+```
+
+Example:
+
+```text
+/eg |cff0070dd[Example Item]|r
+```
+
+EasyGear compares the item with the currently equipped gear.
+
+If it is better:
+
+```text
+Upgrade! 1234 > 1100
+```
+
+If it is not:
+
+```text
+Not upgrade. 1050 1100
+```
+
+---
+
+# Heirloom Upgrade Rule
+
+EasyGear has a special rule for equipped heirlooms.
+
+If:
+
+```lua
+Quality == 7
+```
+
+and:
+
+```lua
+UnitLevel("player") < 80
+```
+
+then the equipped heirloom is treated as the best item for that slot.
+
+Therefore:
+
+```text
+Level 50
+
+Equipped:
+Quality 7 Heirloom
+
+Bag:
+Level 50 Rare
+
+Result:
+Heirloom remains preferred
+```
+
+This prevents leveling characters from receiving upgrade warnings for ordinary gear that would replace their heirlooms.
+
+At:
+
+```text
+Level 80
+```
+
+the special rule is disabled.
+
+The addon returns to normal item-score comparison.
+
+---
+
+# Multi-Slot Equipment
+
+EasyGear accounts for equipment types that can occupy multiple slots.
+
+Examples:
+
+```text
+Ring
+Trinket
+One-handed weapon
+```
+
+For these items, EasyGear compares the candidate against the appropriate equipped slots.
+
+An empty slot is treated as an available upgrade opportunity.
+
+An equipped heirloom in one slot does not automatically prevent a suitable item from being considered for the other slot.
+
+---
+
+# Installation
+
+Copy the addon directory into:
+
+```text
+World of Warcraft/
+└── Interface/
+    └── AddOns/
+        └── EasyGear/
+```
+
+The directory should contain:
+
+```text
+EasyGear/
+├── EasyGear.lua
+├── EasyGear.toc
+└── README.md
+```
+
+Restart WoW or reload the interface:
+
+```text
+/reload
+```
+
+---
+
+# Commands
+
+| Command         | Description                                                             |
+| --------------- | ----------------------------------------------------------------------- |
+| `/EGUP`         | Give the targeted player the configured class-specific heirloom package |
+| `/eg itemlink` | Manually compare an item against equipped gear                          |
+
+---
+
+# Recommended EGUP Workflow
+
+For a GM leveling a new character:
+
+### 1. Target the character
+
+```text
+/target PlayerName
+```
+
+### 2. Run:
+
+```text
+/EGUP
+```
+
+### 3. Verify the inventory
+
+The player should receive the configured heirloom package.
+
+### 4. Equip the items
+
+The addon currently **gives the items to the inventory**; it does not automatically equip them.
+
+This is intentional because `/EGUP` is a distribution command rather than an equipment automation command.
+
+---
+
+# Limitations
+
+EGUP does not currently:
+
+* Purchase heirlooms from vendors.
+* Automatically create missing heirlooms.
+* Automatically equip the distributed items.
+* Determine which specialization the player intends to use.
+* Simulate DPS/healing performance.
+* Verify that a custom server uses the standard WotLK item IDs.
+* Bypass server-side item restrictions.
+* Bypass unique-equipped restrictions.
+* Modify the server database.
+
+It simply generates the appropriate `.additem` commands for the configured class package.
+
+---
+
+# Supported Classes
+
+EasyGear supports:
 
 * Warrior
 * Paladin
@@ -59,399 +597,104 @@ EasyGear currently provides stat weights for:
 * Druid
 * Shaman
 
-The stat weights are defined in `EasyGear.lua` and can be customized to match different gearing priorities or private-server environments.
+---
 
-## Gear Scoring
-
-EasyGear uses a weighted scoring system.
-
-The initial score is based on item level:
+# Project Structure
 
 ```text
-Base Score = Item Level × 2
+EasyGear/
+├── EasyGear.lua
+├── EasyGear.toc
+└── README.md
 ```
 
-Relevant item stats are then added according to the player's class:
+### EasyGear.lua
 
-```text
-Score = (Item Level × 2) + Σ(Stat Value × Stat Weight)
-```
+Contains:
 
-For example, if a class has a stat weight of `5` for a particular stat, every point of that stat contributes five points to the item's score.
+* Item scoring
+* Class stat weights
+* Heirloom detection
+* Level-80 heirloom handling
+* Equipment slot detection
+* Upgrade comparison
+* Quest reward recommendations
+* Bag indicators
+* Blizzard bag integration
+* ElvUI integration
+* Bagnon integration
+* `/eg`
+* `/EGUP`
+* Class-specific heirloom packages
+* GM `.additem` command generation
 
-Only stats present in the class's configured stat-weight table contribute to the score.
+### EasyGear.toc
 
-### Example
+Contains the WoW addon manifest and interface metadata.
 
-An item with:
+---
 
-```text
-Item Level: 100
-Spell Power: 20
-Haste: 10
-```
+# Development
 
-and weights of:
+EasyGear is written in Lua for the WoW 3.3.5a API.
 
-```text
-Spell Power: 8
-Haste: 3
-```
+Repository:
 
-would receive:
+[EasyGear on GitHub](https://github.com/nexartgroup/EasyGear?utm_source=chatgpt.com)
 
-```text
-(100 × 2) + (20 × 8) + (10 × 3)
-= 200 + 160 + 30
-= 390
-```
-
-## Heirlooms
-
-EasyGear gives special treatment to **Heirlooms**.
-
-In WoW 3.3.5a, Heirlooms use **item quality 7**. EasyGear detects this quality directly from the item information.
-
-### Before level 80
-
-If an equipped item has:
-
-```text
-Quality = 7
-```
-
-EasyGear treats it as the best possible item for that equipment slot.
-
-For example:
-
-```text
-Equipped:
-Heirloom Chest — Quality 7
-
-Bag:
-Chest — Score 850
-```
-
-The normal chest will **not** be marked as an upgrade, regardless of its calculated score.
-
-This prevents a leveling character from being repeatedly told to replace an heirloom with ordinary leveling equipment.
-
-### At level 80
-
-Once:
-
-```text
-Character Level >= 80
-```
-
-the special Heirloom protection is disabled.
-
-Heirlooms are then compared using their normal calculated score.
-
-For example:
-
-```text
-Level 79:
-Heirloom → always preferred
-
-Level 80:
-Heirloom → normal score comparison
-```
-
-This allows EasyGear to continue functioning normally once the character reaches the maximum level targeted by the addon.
-
-### Rings, Trinkets and One-Handed Weapons
-
-EasyGear also handles items that can occupy more than one equipment slot.
-
-For example, if a character has:
-
-```text
-Ring Slot 1: Heirloom
-Ring Slot 2: Normal Ring
-```
-
-a new ring can still be considered an upgrade if it is better than the **replaceable normal ring**.
-
-The heirloom protection applies to the equipped heirloom slot rather than preventing all upgrades of that item category.
-
-## Installation
-
-1. Download the repository.
-2. Place the `EasyGear` folder into your World of Warcraft `Interface/AddOns` directory.
-
-The resulting structure should look like:
-
-```text
-World of Warcraft/
-└── Interface/
-    └── AddOns/
-        └── EasyGear/
-            ├── EasyGear.lua
-            ├── EasyGear.toc
-            └── README.md
-```
-
-3. Start World of Warcraft.
-4. Open the **AddOns** menu at character selection.
-5. Enable **EasyGear**.
-6. Enter the game.
-
-EasyGear initializes when the player enters the world.
-
-## Usage
-
-### Bag upgrades
-
-Open your bags and EasyGear automatically evaluates equippable items.
-
-Items considered upgrades receive a green checkmark.
-
-Supported bag interfaces include:
-
-* Blizzard Bags
-* ElvUI Bags
-* Bagnon
-
-EasyGear selects the appropriate integration based on which supported addon is loaded.
-
-### Quest rewards
-
-When a quest offers multiple item rewards, EasyGear evaluates the available choices.
-
-The highest-scoring equippable reward receives a green checkmark.
-
-This can make it easier to choose between several quest rewards without manually comparing every item.
-
-### Manual comparison
-
-Use:
-
-```text
-/puc itemlink
-```
-
-to manually compare an item against your currently equipped gear.
-
-For an upgrade, EasyGear reports:
-
-```text
-Upgrade! 1234 > 1100
-```
-
-For an item that isn't an upgrade:
-
-```text
-Not upgrade. 1050 1100
-```
-
-## Integrations
-
-### Blizzard Bags
-
-EasyGear supports the default Blizzard bag interface.
-
-When no supported third-party bag addon is detected, EasyGear hooks into the Blizzard container frames and adds its upgrade indicators.
-
-### ElvUI
-
-EasyGear detects ElvUI and hooks into its Bags module.
-
-When enabled, EasyGear displays:
-
-```text
-EasyGear: ElvUI bag support enabled.
-```
-
-Upgrade indicators are then updated as ElvUI bag slots refresh.
-
-### Bagnon
-
-EasyGear can also integrate with Bagnon through its `ItemSlot` implementation.
-
-When detected, EasyGear displays:
-
-```text
-EasyGear: Bagnon support enabled.
-```
-
-## Customizing Stat Weights
-
-Stat weights are defined in:
-
-```lua
-function PU:GetStatWeights()
-```
-
-Each class has its own table.
-
-For example:
-
-```lua
-MAGE = {
-    ITEM_MOD_INTELLECT_SHORT = 10,
-    ITEM_MOD_STAMINA_SHORT = 4,
-    ITEM_MOD_HASTE_RATING_SHORT = 3,
-    ITEM_MOD_CRIT_RATING_SHORT = 3,
-    ITEM_MOD_SPELL_POWER_SHORT = 8,
-    ITEM_MOD_HIT_RATING_SHORT = 5,
-},
-```
-
-The values can be changed to adjust how EasyGear evaluates gear.
-
-### Important
-
-Changing stat weights directly changes upgrade recommendations.
-
-The included values should therefore be considered a baseline rather than mathematically optimal values for every specialization, server, or encounter.
-
-## Limitations
-
-EasyGear is intentionally a simple gear-scoring addon rather than a full character simulator.
-
-It does not currently model:
-
-* Talent specialization
-* DPS or healing rotations
-* Set bonuses
-* Gem bonuses
-* Enchantments
-* Item procs
-* On-use effects
-* Encounter-specific stat priorities
-* Detailed stat caps
-* Character-specific optimization
-* Full simulation-based gear evaluation
-
-The Heirloom rule is also intentionally simple:
-
-> **Quality 7 equipped item = best item until level 80.**
-
-This is designed specifically for leveling convenience.
-
-## Private Server Compatibility
-
-EasyGear targets the **World of Warcraft 3.3.5a** API.
-
-Private servers that modify item data, localization, item types, equipment slots, or API behavior may require adjustments to the addon.
-
-In particular, the class equipment compatibility tables use item subtype strings and may need to be changed for servers using different localization or custom item types.
-
-## Debugging
-
-EasyGear includes an internal item debugging function:
-
-```lua
-EasyGear:DebugItem(itemLink)
-```
-
-It outputs information about an item, including:
-
-* Item link
-* Item level
-* Item quality
-* Equipment location
-* Detected item stats
-
-This is useful when troubleshooting unusual items or adapting EasyGear for a custom server.
-
-## Development
-
-EasyGear is written entirely in Lua and does not require a build system or external dependencies.
-
-Clone the repository:
-
-```bash
-git clone https://github.com/nexartgroup/EasyGear.git
-```
-
-Then place the addon directory in:
-
-```text
-Interface/AddOns/
-```
-
-After making changes, reload the WoW UI with:
+After changing Lua code, reload the interface:
 
 ```text
 /reload
 ```
 
-## Project Structure
-
-```text
-EasyGear/
-├── EasyGear.lua    # Main addon implementation
-├── EasyGear.toc    # WoW addon manifest
-└── README.md       # Documentation
-```
-
-### `EasyGear.lua`
-
-Contains:
-
-* Class stat weights
-* Item information extraction
-* Item scoring
-* Item quality detection
-* Heirloom handling
-* Equipment compatibility checks
-* Equipment-slot detection
-* Upgrade comparison
-* Quest reward comparison
-* Bag upgrade indicators
-* Blizzard bag integration
-* ElvUI integration
-* Bagnon integration
-* `/puc` command
-* Addon initialization
-
-### `EasyGear.toc`
-
-Contains the addon metadata and declares the WoW interface version and Lua file used by EasyGear.
-
-## Compatibility
-
-| Component        | Support                      |
-| ---------------- | ---------------------------- |
-| WoW 3.3.5a       | ✅ Target                     |
-| Interface 30300  | ✅                            |
-| Blizzard Bags    | ✅                            |
-| ElvUI Bags       | ✅                            |
-| Bagnon           | ✅                            |
-| Other bag addons | ❌ Not specifically supported |
-| WoW Retail       | ❌ Not supported              |
-
-## Contributing
-
-Contributions and improvements are welcome.
-
-Potential areas for improvement include:
-
-* Specialization-specific stat weights
-* Better stat-cap handling
-* More accurate class profiles
-* Set-bonus evaluation
-* Gem and enchant evaluation
-* Additional bag integrations
-* Localization
-* Configuration UI
-* More advanced gear comparison
-* Improved custom-server compatibility
-
-When changing the scoring system, test several equipment types and equipment slots to ensure that the upgrade indicators continue to behave correctly.
-
-## License
-
-The repository currently does not contain an explicit open-source license.
-
-If you intend to redistribute or publish modified versions of EasyGear, contact the repository owner regarding the applicable licensing terms.
-
-## Repository
-
-[EasyGear on GitHub](https://github.com/nexartgroup/EasyGear?utm_source=chatgpt.com)
+For larger changes, restarting the WoW client is recommended.
 
 ---
 
-**EasyGear** — simple, fast gear recommendations for WoW 3.3.5a.
+# Customizing EGUP
+
+The most important section for server administrators is:
+
+```lua
+local EGUP_ITEMS = {
+```
+
+This is where the heirloom item IDs and quantities are defined.
+
+For a custom server, replace the standard item IDs with the IDs from your server database.
+
+The class-selection logic can also be modified to provide different packages.
+
+For example:
+
+```lua
+elseif class == "ROGUE" then
+
+    Add(EGUP_ITEMS.LEATHER_AGI.CHEST)
+    Add(EGUP_ITEMS.LEATHER_AGI.SHOULDERS)
+    Add(EGUP_ITEMS.LEATHER_AGI.DAGGER)
+    Add(EGUP_ITEMS.LEATHER_AGI.SWORD)
+```
+
+This makes it straightforward to customize the Rogue package.
+
+---
+
+# License
+
+No explicit open-source license is currently specified in the repository.
+
+If redistributing modified versions of EasyGear, check with the repository owner regarding applicable licensing terms.
+
+---
+
+# Credits
+
+EasyGear was created as a lightweight gear recommendation and GM utility addon for WoW 3.3.5a private-server environments.
+
+The EGUP system extends the addon with a convenient class-aware heirloom distribution system.
+
+---
+
+**EasyGear — gear evaluation and class-aware heirloom distribution for WoW 3.3.5a.**
