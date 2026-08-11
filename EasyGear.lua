@@ -222,6 +222,7 @@ function PU:GetItemData(itemLink)
         name = itemName,
         link = itemLink2 or itemLink,
         level = itemLevel,
+        minLevel = itemMinLevel or 0,
         quality = quality or 0,
         equipLoc = equipLoc,
         itemType = itemType,
@@ -242,6 +243,32 @@ function PU:GetItemData(itemLink)
 
     return data
 
+end
+
+--------------------------------------------------------
+-- Check item level requirement
+--------------------------------------------------------
+
+function PU:IsItemLevelTooHigh(itemLink)
+
+    if not itemLink then
+        return false
+    end
+
+    local item =
+        self:GetItemData(itemLink)
+
+    if not item then
+        return false
+    end
+
+    local requiredLevel =
+        tonumber(item.minLevel) or 0
+
+    local playerLevel =
+        UnitLevel("player") or 0
+
+    return requiredLevel > playerLevel
 end
 
 ------------------------------------------------------------
@@ -307,25 +334,25 @@ end
 
 local EQUIPMENT_SLOT_NAMES = {
 
-    [1] = "Head",
-    [2] = "Neck",
-    [3] = "Shoulder",
-    [4] = "Shirt",
-    [5] = "Chest",
-    [6] = "Waist",
-    [7] = "Legs",
-    [8] = "Feet",
-    [9] = "Wrist",
-    [10] = "Hands",
+    [1] = "Kopf",
+    [2] = "Hals",
+    [3] = "Schultern",
+    [4] = "Hemd",
+    [5] = "Brust",
+    [6] = "Taille",
+    [7] = "Beine",
+    [8] = "Füße",
+    [9] = "Handgelenke",
+    [10] = "Hände",
     [11] = "Finger 1",
     [12] = "Finger 2",
     [13] = "Trinket 1",
     [14] = "Trinket 2",
-    [15] = "Back",
-    [16] = "Main Hand",
-    [17] = "Off Hand",
-    [18] = "Ranged",
-    [19] = "Tabard",
+    [15] = "Rücken",
+    [16] = "Haupthand",
+    [17] = "Nebenhand",
+    [18] = "Disztanz",
+    [19] = "Munition",
 
 }
 
@@ -1226,13 +1253,50 @@ function PU:UpdateBagButton(
 
     end
 
+    ----------------------------------------------------
+    -- Item requires a higher character level.
+    --
+    -- Yellow = potentially useful item, but currently
+    -- cannot be equipped.
+    ----------------------------------------------------
+
+    if self:IsItemLevelTooHigh(link) then
+
+        button.PUUpgradeIcon:SetVertexColor(
+            1,
+            1,
+            0
+        )
+
+        button.PUUpgradeIcon:Show()
+
+        return
+
+    end
+
+    ----------------------------------------------------
+    -- Normal upgrade check.
+    --
+    -- Green = currently usable upgrade.
+    ----------------------------------------------------
+
     local upgrade =
         self:IsUpgrade(link)
 
     if upgrade then
+
+        button.PUUpgradeIcon:SetVertexColor(
+            0,
+            1,
+            0
+        )
+
         button.PUUpgradeIcon:Show()
+
     else
+
         button.PUUpgradeIcon:Hide()
+
     end
 
 end
@@ -2441,6 +2505,14 @@ function PU:RunEGUPClean()
 
 end
 
+
+function PU:GetLocalizedStatName(stat)
+
+    return _G[stat]
+        or stat
+
+end
+
 ------------------------------------------------------------
 -- ==========================================================
 -- /EG
@@ -2599,14 +2671,26 @@ function(msg)
         "|cffffff00" .. tostring(item.level or 0) .. "|r"
     )
     
-    local stats = GetItemStats(item.link)
-
-    for stat, value in pairs(stats or {}) do
+    if item.stats then
+    
         print(
-            tostring(stat) .. ":",
-            "|cffffff00" .. tostring(value) .. "|r"
+            "Stats:"
         )
+    
+        for stat, value in pairs(item.stats) do
+    
+            print(
+                tostring(PU:GetLocalizedStatName(stat)) .. ":",
+                "|cffffff00"
+                    .. "+" .. tostring(value)
+                    .. "|r"
+            )
+    
+        end
+    
     end
+
+
 
     print(
         "Quality:",
@@ -2627,6 +2711,15 @@ function(msg)
         print(
             "Subtype:",
             "|cffffff00" .. tostring(item.itemSubType) .. "|r"
+        )
+        
+    end
+    
+    if item.minLevel then
+
+        print(
+            "minLevel:",
+            "|cffffff00" .. tostring(item.minLevel) .. "|r"
         )
         
     end
