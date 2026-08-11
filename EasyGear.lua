@@ -469,166 +469,442 @@ end
 -- Equipment compatibility
 ------------------------------------------------------------
 function PU:CanEquipItem(itemLink)
+
     if not itemLink then
         return false
     end
+
     local _, _, _, _, _, itemType, itemSubType =
         GetItemInfo(itemLink)
+
     if not itemType or not itemSubType then
         return false
     end
-    local class =
-        select(
-            2,
-            UnitClass("player")
+
+    local _, class =
+        UnitClass("player")
+
+    if not class then
+        return false
+    end
+
+    --------------------------------------------------------
+    -- Localized Blizzard strings
+    --
+    -- First try the Blizzard GlobalString.
+    -- If the HD client does not provide it, use the
+    -- English fallback and German fallback.
+    --------------------------------------------------------
+
+    local function GetLocalizedString(
+        globalName,
+        english,
+        german
+    )
+
+        local value =
+            _G[globalName]
+
+        if value then
+            return value
+        end
+
+        -- German client:
+        if GetLocale() == "deDE" then
+            return german
+        end
+
+        return english
+
+    end
+
+    --------------------------------------------------------
+    -- Armor
+    --------------------------------------------------------
+
+    local CLOTH =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_ARMOR_CLOTH",
+            "Cloth",
+            "Stoff"
         )
+
+    local LEATHER =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_ARMOR_LEATHER",
+            "Leather",
+            "Leder"
+        )
+
+    local MAIL =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_ARMOR_MAIL",
+            "Mail",
+            "Schwere Rüstung"
+        )
+
+    local PLATE =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_ARMOR_PLATE",
+            "Plate",
+            "Plattenrüstung"
+        )
+
+    --------------------------------------------------------
+    -- Weapons
+    --------------------------------------------------------
+
+    local DAGGER =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_DAGGER",
+            "Daggers",
+            "Dolche"
+        )
+
+    local FIST =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_FIST",
+            "Fist Weapons",
+            "Faustwaffen"
+        )
+
+    local AXE_1H =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_AXE",
+            "Axes",
+            "Äxte"
+        )
+
+    local AXE_2H =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_AXE2",
+            "Two-Handed Axes",
+            "Zweihandäxte"
+        )
+
+    local MACE_1H =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_MACE",
+            "Maces",
+            "Streitkolben"
+        )
+
+    local MACE_2H =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_MACE2",
+            "Two-Handed Maces",
+            "Zweihandstreitkolben"
+        )
+
+    local SWORD_1H =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_SWORD",
+            "Swords",
+            "Schwerter"
+        )
+
+    local SWORD_2H =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_SWORD2",
+            "Two-Handed Swords",
+            "Zweihandschwerter"
+        )
+
+    local POLEARM =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_POLEARM",
+            "Polearms",
+            "Stangenwaffen"
+        )
+
+    local STAFF =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_STAFF",
+            "Staves",
+            "Stäbe"
+        )
+
+    local BOW =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_BOW",
+            "Bows",
+            "Bogen"
+        )
+
+    local GUN =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_GUN",
+            "Guns",
+            "Schusswaffen"
+        )
+
+    local CROSSBOW =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_CROSSBOW",
+            "Crossbows",
+            "Armbrüste"
+        )
+
+    local WAND =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_WAND",
+            "Wands",
+            "Zauberstäbe"
+        )
+
+    local THROWN =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_THROWN",
+            "Thrown",
+            "Wurfwaffen"
+        )
+
+    --------------------------------------------------------
+    -- Miscellaneous
+    --------------------------------------------------------
+
+    local MISC =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_MISC",
+            "Miscellaneous",
+            "Verschiedenes"
+        )
+
+    --------------------------------------------------------
+    -- Allowed subtypes per class
+    --------------------------------------------------------
+
     local allowed = {
-    WARRIOR = {
-        -- Rüstung
-        ["Stoff"] = true,
-        ["Leder"] = true,
-        ["Schwere Rüstung"] = true,
-        ["Plattenrüstung"] = true,
-        -- Waffen
-        ["Dolche"] = true,
-        ["Faustwaffen"] = true,
-        ["Einhandäxte"] = true,
-        ["Zweihandäxte"] = true,
-        ["Einhandstreitkolben"] = true,
-        ["Zweihandstreitkolben"] = true,
-        ["Einhandschwerter"] = true,
-        ["Zweihandschwerter"] = true,
-        ["Stangenwaffen"] = true,
-        ["Stäbe"] = true,
-        ["Schusswaffen"] = true,
-        ["Bogen"] = true,
-        ["Armbrüste"] = true,
-        ["Wurfwaffen"] = true,
-        -- Sonstiges
-        ["Verschiedenes"] = true,
-    },
-    PALADIN = {
-        -- Rüstung
-        ["Stoff"] = true,
-        ["Leder"] = true,
-        ["Schwere Rüstung"] = true,
-        ["Plattenrüstung"] = true,
-        -- Waffen
-        ["Einhandäxte"] = true,
-        ["Zweihandäxte"] = true,
-        ["Einhandstreitkolben"] = true,
-        ["Zweihandstreitkolben"] = true,
-        ["Einhandschwerter"] = true,
-        ["Zweihandschwerter"] = true,
-        ["Stangenwaffen"] = true,
-        -- Sonstiges
-        ["Verschiedenes"] = true,
-    },
-    HUNTER = {
-        -- Rüstung
-        ["Stoff"] = true,
-        ["Leder"] = true,
-        ["Schwere Rüstung"] = true,
-        -- Waffen
-        ["Dolche"] = true,
-        ["Einhandäxte"] = true,
-        ["Zweihandäxte"] = true,
-        ["Einhandschwerter"] = true,
-        ["Zweihandschwerter"] = true,
-        ["Stangenwaffen"] = true,
-        ["Stäbe"] = true,
-        ["Bogen"] = true,
-        ["Armbrüste"] = true,
-        ["Schusswaffen"] = true,
-        ["Wurfwaffen"] = true,
-        -- Sonstiges
-        ["Verschiedenes"] = true,
-    },
-    ROGUE = {
-        -- Rüstung
-        ["Stoff"] = true,
-        ["Leder"] = true,
-        -- Waffen
-        ["Dolche"] = true,
-        ["Faustwaffen"] = true,
-        ["Einhandäxte"] = true,
-        ["Einhandstreitkolben"] = true,
-        ["Einhandschwerter"] = true,
-        ["Bogen"] = true,
-        ["Armbrüste"] = true,
-        ["Schusswaffen"] = true,
-        ["Wurfwaffen"] = true,
-        -- Sonstiges
-        ["Verschiedenes"] = true,
-    },
-    DRUID = {
-        -- Rüstung
-        ["Stoff"] = true,
-        ["Leder"] = true,
-        -- Waffen
-        ["Dolche"] = true,
-        ["Faustwaffen"] = true,
-        ["Einhandstreitkolben"] = true,
-        ["Zweihandstreitkolben"] = true,
-        ["Stangenwaffen"] = true,
-        ["Stäbe"] = true,
-        -- Sonstiges
-        ["Verschiedenes"] = true,
-    },
-    SHAMAN = {
-        -- Rüstung
-        ["Stoff"] = true,
-        ["Leder"] = true,
-        ["Schwere Rüstung"] = true,
-        -- Waffen
-        ["Dolche"] = true,
-        ["Faustwaffen"] = true,
-        ["Einhandäxte"] = true,
-        ["Zweihandäxte"] = true,
-        ["Einhandstreitkolben"] = true,
-        ["Zweihandstreitkolben"] = true,
-        ["Stäbe"] = true,
-        -- Sonstiges
-        ["Verschiedenes"] = true,
-    },
-    PRIEST = {
-        -- Rüstung
-        ["Stoff"] = true,
-        -- Waffen
-        ["Dolche"] = true,
-        ["Einhandstreitkolben"] = true,
-        ["Stäbe"] = true,
-        ["Zauberstäbe"] = true,
-        -- Sonstiges
-        ["Verschiedenes"] = true,
-    },
-    MAGE = {
-        -- Rüstung
-        ["Stoff"] = true,
-        -- Waffen
-        ["Dolche"] = true,
-        ["Einhandschwerter"] = true,
-        ["Stäbe"] = true,
-        ["Zauberstäbe"] = true,
-        -- Sonstiges
-        ["Verschiedenes"] = true,
-    },
-    WARLOCK = {
-        -- Rüstung
-        ["Stoff"] = true,
-        -- Waffen
-        ["Dolche"] = true,
-        ["Einhandschwerter"] = true,
-        ["Stäbe"] = true,
-        ["Zauberstäbe"] = true,
-        -- Sonstiges
-        ["Verschiedenes"] = true,
-    },
-}
+
+        ----------------------------------------------------
+        -- Warrior
+        ----------------------------------------------------
+
+        WARRIOR = {
+
+            -- Armor
+            [CLOTH] = true,
+            [LEATHER] = true,
+            [MAIL] = true,
+            [PLATE] = true,
+
+            -- Weapons
+            [DAGGER] = true,
+            [FIST] = true,
+            [AXE_1H] = true,
+            [AXE_2H] = true,
+            [MACE_1H] = true,
+            [MACE_2H] = true,
+            [SWORD_1H] = true,
+            [SWORD_2H] = true,
+            [POLEARM] = true,
+            [STAFF] = true,
+            [GUN] = true,
+            [BOW] = true,
+            [CROSSBOW] = true,
+            [THROWN] = true,
+
+            -- Misc
+            [MISC] = true,
+        },
+
+        ----------------------------------------------------
+        -- Paladin
+        ----------------------------------------------------
+
+        PALADIN = {
+
+            -- Armor
+            [CLOTH] = true,
+            [LEATHER] = true,
+            [MAIL] = true,
+            [PLATE] = true,
+
+            -- Weapons
+            [AXE_1H] = true,
+            [AXE_2H] = true,
+            [MACE_1H] = true,
+            [MACE_2H] = true,
+            [SWORD_1H] = true,
+            [SWORD_2H] = true,
+            [POLEARM] = true,
+
+            -- Misc
+            [MISC] = true,
+        },
+
+        ----------------------------------------------------
+        -- Hunter
+        ----------------------------------------------------
+
+        HUNTER = {
+
+            -- Armor
+            [CLOTH] = true,
+            [LEATHER] = true,
+            [MAIL] = true,
+
+            -- Weapons
+            [DAGGER] = true,
+            [FIST] = true,
+            [AXE_1H] = true,
+            [AXE_2H] = true,
+            [SWORD_1H] = true,
+            [SWORD_2H] = true,
+            [POLEARM] = true,
+            [STAFF] = true,
+            [BOW] = true,
+            [CROSSBOW] = true,
+            [GUN] = true,
+            [THROWN] = true,
+
+            -- Misc
+            [MISC] = true,
+        },
+
+        ----------------------------------------------------
+        -- Rogue
+        ----------------------------------------------------
+
+        ROGUE = {
+
+            -- Armor
+            [CLOTH] = true,
+            [LEATHER] = true,
+
+            -- Weapons
+            [DAGGER] = true,
+            [FIST] = true,
+            [AXE_1H] = true,
+            [MACE_1H] = true,
+            [SWORD_1H] = true,
+            [BOW] = true,
+            [CROSSBOW] = true,
+            [GUN] = true,
+            [THROWN] = true,
+
+            -- Misc
+            [MISC] = true,
+        },
+
+        ----------------------------------------------------
+        -- Druid
+        ----------------------------------------------------
+
+        DRUID = {
+
+            -- Armor
+            [CLOTH] = true,
+            [LEATHER] = true,
+
+            -- Weapons
+            [DAGGER] = true,
+            [FIST] = true,
+            [MACE_1H] = true,
+            [MACE_2H] = true,
+            [POLEARM] = true,
+            [STAFF] = true,
+
+            -- Misc
+            [MISC] = true,
+        },
+
+        ----------------------------------------------------
+        -- Shaman
+        ----------------------------------------------------
+
+        SHAMAN = {
+
+            -- Armor
+            [CLOTH] = true,
+            [LEATHER] = true,
+            [MAIL] = true,
+
+            -- Weapons
+            [DAGGER] = true,
+            [FIST] = true,
+            [AXE_1H] = true,
+            [AXE_2H] = true,
+            [MACE_1H] = true,
+            [MACE_2H] = true,
+            [STAFF] = true,
+
+            -- Misc
+            [MISC] = true,
+        },
+
+        ----------------------------------------------------
+        -- Priest
+        ----------------------------------------------------
+
+        PRIEST = {
+
+            -- Armor
+            [CLOTH] = true,
+
+            -- Weapons
+            [DAGGER] = true,
+            [MACE_1H] = true,
+            [STAFF] = true,
+            [WAND] = true,
+
+            -- Misc
+            [MISC] = true,
+        },
+
+        ----------------------------------------------------
+        -- Mage
+        ----------------------------------------------------
+
+        MAGE = {
+
+            -- Armor
+            [CLOTH] = true,
+
+            -- Weapons
+            [DAGGER] = true,
+            [SWORD_1H] = true,
+            [STAFF] = true,
+            [WAND] = true,
+
+            -- Misc
+            [MISC] = true,
+        },
+
+        ----------------------------------------------------
+        -- Warlock
+        ----------------------------------------------------
+
+        WARLOCK = {
+
+            -- Armor
+            [CLOTH] = true,
+
+            -- Weapons
+            [DAGGER] = true,
+            [SWORD_1H] = true,
+            [STAFF] = true,
+            [WAND] = true,
+
+            -- Misc
+            [MISC] = true,
+        },
+    }
+
+    --------------------------------------------------------
+    -- Unknown class
+    --------------------------------------------------------
+
     if not allowed[class] then
         return false
     end
+
+    --------------------------------------------------------
+    -- Check subtype
+    --------------------------------------------------------
+
     return allowed[class][itemSubType] == true
+
 end
 --------------------------------------------------------
 -- Quest reward scoring
