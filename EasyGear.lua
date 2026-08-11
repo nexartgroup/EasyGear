@@ -131,6 +131,7 @@ function PU:GetStatWeights()
             ITEM_MOD_ATTACK_POWER_SHORT = 5,
             ITEM_MOD_HIT_RATING_SHORT = 3,
             ITEM_MOD_EXPERTISE_RATING_SHORT = 4,
+            ITEM_MOD_RESISTANCE0 = 0.5,
         },
 
         PRIEST = {
@@ -177,11 +178,19 @@ function PU:GetStatWeights()
         },
 
     }
+    
+    
 
-    return weights[class] or {
+    local result = weights[class] or {
         ITEM_MOD_STAMINA_SHORT = 5
     }
+    
+    if UnitLevel("player") <= 80 then
+        result.RESISTANCE0_NAME = 5
+    end
 
+    return result
+    
 end
 
 ------------------------------------------------------------
@@ -246,7 +255,7 @@ function PU:GetItemScore(item)
     end
 
     local score =
-        (item.level or 0) * 2
+        ((item.level or 0) * 2)
 
     local weights =
         self:GetStatWeights()
@@ -635,136 +644,174 @@ function PU:CanEquipItem(itemLink)
 
     local allowed = {
 
-        WARRIOR = {
-            ["Stoff"] = true,
-            ["Leder"] = true,
-            ["Schwere Rüstung"] = true,
-            ["Plattenrüstung"] = true,
-            ["Verschiedenes"] = true,
+    WARRIOR = {
+        -- Rüstung
+        ["Stoff"] = true,
+        ["Leder"] = true,
+        ["Schwere Rüstung"] = true,
+        ["Plattenrüstung"] = true,
 
-            ["Dolche"] = true,
-            ["Faustwaffen"] = true,
-            ["Einhandäxte"] = true,
-            ["Zweihandäxte"] = true,
-            ["Einhandstreitkolben"] = true,
-            ["Zweihandstreitkolben"] = true,
-            ["Einhandschwerter"] = true,
-            ["Zweihandschwerter"] = true,
-            ["Stangenwaffen"] = true,
-            ["Stäbe"] = true,
-            ["Schusswaffen"] = true,
-            ["Bogen"] = true,
-            ["Armbrüste"] = true,
-            ["Wurfwaffen"] = true,
-        },
+        -- Waffen
+        ["Dolche"] = true,
+        ["Faustwaffen"] = true,
+        ["Einhandäxte"] = true,
+        ["Zweihandäxte"] = true,
+        ["Einhandstreitkolben"] = true,
+        ["Zweihandstreitkolben"] = true,
+        ["Einhandschwerter"] = true,
+        ["Zweihandschwerter"] = true,
+        ["Stangenwaffen"] = true,
+        ["Stäbe"] = true,
+        ["Schusswaffen"] = true,
+        ["Bogen"] = true,
+        ["Armbrüste"] = true,
+        ["Wurfwaffen"] = true,
 
-        PALADIN = {
-            ["Stoff"] = true,
-            ["Leder"] = true,
-            ["Schwere Rüstung"] = true,
-            ["Plattenrüstung"] = true,
+        -- Sonstiges
+        ["Verschiedenes"] = true,
+    },
 
-            ["Einhandstreitkolben"] = true,
-            ["Zweihandstreitkolben"] = true,
-            ["Einhandschwerter"] = true,
-            ["Zweihandschwerter"] = true,
-            ["Stangenwaffen"] = true,
-        },
+    PALADIN = {
+        -- Rüstung
+        ["Stoff"] = true,
+        ["Leder"] = true,
+        ["Schwere Rüstung"] = true,
+        ["Plattenrüstung"] = true,
 
-        HUNTER = {
-            ["Stoff"] = true,
-            ["Leder"] = true,
-            ["Schwere Rüstung"] = true,
-            ["Verschiedenes"] = true,
-            ["Verschiedenes"] = true,
+        -- Waffen
+        ["Einhandäxte"] = true,
+        ["Zweihandäxte"] = true,
+        ["Einhandstreitkolben"] = true,
+        ["Zweihandstreitkolben"] = true,
+        ["Einhandschwerter"] = true,
+        ["Zweihandschwerter"] = true,
+        ["Stangenwaffen"] = true,
 
-            ["Dolche"] = true,
-            ["Einhandäxte"] = true,
-            ["Zweihandäxte"] = true,
-            ["Einhandschwerter"] = true,
-            ["Zweihandschwerter"] = true,
-            ["Stangenwaffen"] = true,
-            ["Stäbe"] = true,
-            ["Bogen"] = true,
-            ["Armbrüste"] = true,
-            ["Schusswaffen"] = true,
-        },
+        -- Sonstiges
+        ["Verschiedenes"] = true,
+    },
 
-        ROGUE = {
-            ["Stoff"] = true,
-            ["Leder"] = true,
-            ["Verschiedenes"] = true,
+    HUNTER = {
+        -- Rüstung
+        ["Stoff"] = true,
+        ["Leder"] = true,
+        ["Schwere Rüstung"] = true,
 
-            ["Dolche"] = true,
-            ["Faustwaffen"] = true,
-            ["Einhandäxte"] = true,
-            ["Einhandstreitkolben"] = true,
-            ["Einhandschwerter"] = true,
-            ["Bogen"] = true,
-            ["Armbrüste"] = true,
-            ["Schusswaffen"] = true,
-            ["Wurfwaffen"] = true,
-        },
+        -- Waffen
+        ["Dolche"] = true,
+        ["Einhandäxte"] = true,
+        ["Zweihandäxte"] = true,
+        ["Einhandschwerter"] = true,
+        ["Zweihandschwerter"] = true,
+        ["Stangenwaffen"] = true,
+        ["Stäbe"] = true,
+        ["Bogen"] = true,
+        ["Armbrüste"] = true,
+        ["Schusswaffen"] = true,
+        ["Wurfwaffen"] = true,
 
-        DRUID = {
-            ["Stoff"] = true,
-            ["Leder"] = true,
-            ["Verschiedenes"] = true,
+        -- Sonstiges
+        ["Verschiedenes"] = true,
+    },
 
-            ["Dolche"] = true,
-            ["Faustwaffen"] = true,
-            ["Einhandstreitkolben"] = true,
-            ["Zweihandstreitkolben"] = true,
-            ["Stangenwaffen"] = true,
-            ["Stäbe"] = true,
-            ["Verschiedenes"] = true,
-        },
+    ROGUE = {
+        -- Rüstung
+        ["Stoff"] = true,
+        ["Leder"] = true,
 
-        SHAMAN = {
-            ["Stoff"] = true,
-            ["Leder"] = true,
-            ["Schwere Rüstung"] = true,
-            ["Verschiedenes"] = true,
+        -- Waffen
+        ["Dolche"] = true,
+        ["Faustwaffen"] = true,
+        ["Einhandäxte"] = true,
+        ["Einhandstreitkolben"] = true,
+        ["Einhandschwerter"] = true,
+        ["Bogen"] = true,
+        ["Armbrüste"] = true,
+        ["Schusswaffen"] = true,
+        ["Wurfwaffen"] = true,
 
-            ["Dolche"] = true,
-            ["Faustwaffen"] = true,
-            ["Einhandäxte"] = true,
-            ["Zweihandäxte"] = true,
-            ["Einhandstreitkolben"] = true,
-            ["Zweihandstreitkolben"] = true,
-            ["Stäbe"] = true,
-        },
+        -- Sonstiges
+        ["Verschiedenes"] = true,
+    },
 
-        PRIEST = {
-            ["Stoff"] = true,
-            ["Verschiedenes"] = true,
+    DRUID = {
+        -- Rüstung
+        ["Stoff"] = true,
+        ["Leder"] = true,
 
-            ["Dolche"] = true,
-            ["Einhandstreitkolben"] = true,
-            ["Stäbe"] = true,
-            ["Zauberstäbe"] = true,
-        },
+        -- Waffen
+        ["Dolche"] = true,
+        ["Faustwaffen"] = true,
+        ["Einhandstreitkolben"] = true,
+        ["Zweihandstreitkolben"] = true,
+        ["Stangenwaffen"] = true,
+        ["Stäbe"] = true,
 
-        MAGE = {
-            ["Stoff"] = true,
-            ["Verschiedenes"] = true,
+        -- Sonstiges
+        ["Verschiedenes"] = true,
+    },
 
-            ["Dolche"] = true,
-            ["Einhandschwerter"] = true,
-            ["Stäbe"] = true,
-            ["Zauberstäbe"] = true,
-        },
+    SHAMAN = {
+        -- Rüstung
+        ["Stoff"] = true,
+        ["Leder"] = true,
+        ["Schwere Rüstung"] = true,
 
-        WARLOCK = {
-            ["Stoff"] = true,
-            ["Verschiedenes"] = true,
+        -- Waffen
+        ["Dolche"] = true,
+        ["Faustwaffen"] = true,
+        ["Einhandäxte"] = true,
+        ["Zweihandäxte"] = true,
+        ["Einhandstreitkolben"] = true,
+        ["Zweihandstreitkolben"] = true,
+        ["Stäbe"] = true,
 
-            ["Dolche"] = true,
-            ["Einhandschwerter"] = true,
-            ["Stäbe"] = true,
-            ["Zauberstäbe"] = true,
-        },
-    }
+        -- Sonstiges
+        ["Verschiedenes"] = true,
+    },
+
+    PRIEST = {
+        -- Rüstung
+        ["Stoff"] = true,
+
+        -- Waffen
+        ["Dolche"] = true,
+        ["Einhandstreitkolben"] = true,
+        ["Stäbe"] = true,
+        ["Zauberstäbe"] = true,
+
+        -- Sonstiges
+        ["Verschiedenes"] = true,
+    },
+
+    MAGE = {
+        -- Rüstung
+        ["Stoff"] = true,
+
+        -- Waffen
+        ["Dolche"] = true,
+        ["Einhandschwerter"] = true,
+        ["Stäbe"] = true,
+        ["Zauberstäbe"] = true,
+
+        -- Sonstiges
+        ["Verschiedenes"] = true,
+    },
+
+    WARLOCK = {
+        -- Rüstung
+        ["Stoff"] = true,
+
+        -- Waffen
+        ["Dolche"] = true,
+        ["Einhandschwerter"] = true,
+        ["Stäbe"] = true,
+        ["Zauberstäbe"] = true,
+
+        -- Sonstiges
+        ["Verschiedenes"] = true,
+    },
+}
 
     if not allowed[class] then
         return false
@@ -774,18 +821,17 @@ function PU:CanEquipItem(itemLink)
 
 end
 
-------------------------------------------------------------
+--------------------------------------------------------
 -- Quest reward scoring
-------------------------------------------------------------
+--------------------------------------------------------
 
 function PU:GetQuestRewardScore(itemLink)
 
-    if not self:CanEquipItem(itemLink) then
+    if not itemLink then
         return 0
     end
 
-    local item =
-        self:GetItemData(itemLink)
+    local item = self:GetItemData(itemLink)
 
     if not item then
         return 0
@@ -795,23 +841,149 @@ function PU:GetQuestRewardScore(itemLink)
 
 end
 
+
+--------------------------------------------------------
+-- Get quest reward item ID
+--------------------------------------------------------
+
+function PU:GetQuestRewardItemID(index)
+
+    if not index then
+        return nil
+    end
+
+    -- Modern clients provide itemID directly.
+    if GetQuestItemInfo then
+
+        local _, _, _, _, _, itemID =
+            GetQuestItemInfo(
+                "choice",
+                index
+            )
+
+        if itemID then
+            return tonumber(itemID)
+        end
+
+    end
+
+    -- Fallback: extract ID from item link.
+    local link =
+        GetQuestItemLink(
+            "choice",
+            index
+        )
+
+    if not link then
+        return nil
+    end
+
+    return self:GetItemIDFromLink(link)
+
+end
+
+
+--------------------------------------------------------
+-- Get quest reward link
+--------------------------------------------------------
+
+function PU:GetQuestRewardLink(index)
+
+    if not index then
+        return nil
+    end
+
+    return GetQuestItemLink(
+        "choice",
+        index
+    )
+
+end
+
+
+--------------------------------------------------------
+-- Check whether quest reward is usable
+--------------------------------------------------------
+
+function PU:IsQuestRewardUsable(index)
+
+    if not index then
+        return false
+    end
+
+    if GetQuestItemInfo then
+
+        local _, _, _, _, isUsable =
+            GetQuestItemInfo(
+                "choice",
+                index
+            )
+
+        if isUsable ~= nil then
+            return isUsable
+        end
+
+    end
+
+    local link =
+        self:GetQuestRewardLink(index)
+
+    if not link then
+        return false
+    end
+
+    return self:CanEquipItem(link)
+
+end
+
+
+--------------------------------------------------------
+-- Get best quest reward
+--------------------------------------------------------
+
 function PU:GetBestQuestReward()
 
-    local bestButton
-    local bestScore = 0
+    local bestButton = nil
+    local bestScore = -math.huge
 
-    for i = 1, GetNumQuestChoices() do
+    local numChoices =
+        GetNumQuestChoices()
+
+    if not numChoices
+    or numChoices <= 0 then
+        return nil, 0
+    end
+
+    for i = 1, numChoices do
 
         local link =
-            GetQuestItemLink(
-                "choice",
-                i
-            )
+            self:GetQuestRewardLink(i)
 
         if link then
 
-            local score =
-                self:GetQuestRewardScore(link)
+            local score = 0
+
+            ------------------------------------------------
+            -- Prefer Blizzard's quest usability result.
+            ------------------------------------------------
+
+            if self:IsQuestRewardUsable(i) then
+
+                local item =
+                    self:GetItemData(link)
+
+                if item then
+
+                    score =
+                        self:GetItemScore(item)
+
+                end
+
+            end
+
+            ------------------------------------------------
+            -- Keep non-zero results only.
+            ------------------------------------------------
 
             if score > bestScore then
 
@@ -824,15 +996,24 @@ function PU:GetBestQuestReward()
 
     end
 
+    if not bestButton then
+        return nil, 0
+    end
+
     return bestButton, bestScore
 
 end
 
-------------------------------------------------------------
--- Quest indicator
-------------------------------------------------------------
+
+--------------------------------------------------------
+-- Create quest indicator
+--------------------------------------------------------
 
 function PU:CreateQuestIndicator(button)
+
+    if not button then
+        return
+    end
 
     if button.PUQuestIcon then
         return
@@ -873,7 +1054,20 @@ function PU:CreateQuestIndicator(button)
 
 end
 
+
+--------------------------------------------------------
+-- Update quest rewards
+--------------------------------------------------------
+
 function PU:UpdateQuestRewards()
+
+    local numChoices =
+        GetNumQuestChoices()
+
+    if not numChoices
+    or numChoices <= 0 then
+        return
+    end
 
     local best =
         self:GetBestQuestReward()
@@ -882,7 +1076,7 @@ function PU:UpdateQuestRewards()
         return
     end
 
-    for i = 1, GetNumQuestChoices() do
+    for i = 1, numChoices do
 
         local button =
             _G[
@@ -907,6 +1101,11 @@ function PU:UpdateQuestRewards()
 
 end
 
+
+--------------------------------------------------------
+-- Delayed quest reward update
+--------------------------------------------------------
+
 function PU:HookQuestRewards()
 
     if self.questHooked then
@@ -921,10 +1120,29 @@ function PU:HookQuestRewards()
         "QuestInfo_Display",
         function()
 
+            ------------------------------------------------
+            -- Quest reward item data may not be available
+            -- immediately when QuestInfo_Display fires.
+            ------------------------------------------------
+
             self:After(
                 0.2,
                 function()
+
                     self:UpdateQuestRewards()
+
+                    ------------------------------------------------
+                    -- Second pass in case GetItemInfo() was
+                    -- still waiting for item data.
+                    ------------------------------------------------
+
+                    self:After(
+                        0.5,
+                        function()
+                            self:UpdateQuestRewards()
+                        end
+                    )
+
                 end
             )
 
@@ -2380,6 +2598,15 @@ function(msg)
         "Item Level:",
         "|cffffff00" .. tostring(item.level or 0) .. "|r"
     )
+    
+    local stats = GetItemStats(item.link)
+
+    for stat, value in pairs(stats or {}) do
+        print(
+            tostring(stat) .. ":",
+            "|cffffff00" .. tostring(value) .. "|r"
+        )
+    end
 
     print(
         "Quality:",
@@ -2401,7 +2628,7 @@ function(msg)
             "Subtype:",
             "|cffffff00" .. tostring(item.itemSubType) .. "|r"
         )
-
+        
     end
 
     --------------------------------------------------------
