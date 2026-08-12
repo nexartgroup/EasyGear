@@ -168,7 +168,9 @@ function PU:GetItemData(itemLink)
           itemType,
           itemSubType,
           itemStackCount,
-          equipLoc =
+          equipLoc,
+          texture,
+          sellPrice =
         GetItemInfo(itemLink)
     if not itemLevel then
         return nil
@@ -182,6 +184,7 @@ function PU:GetItemData(itemLink)
         equipLoc = equipLoc,
         itemType = itemType,
         itemSubType = itemSubType,
+        value = sellPrice or 0,
         stats = {}
     }
     local stats =
@@ -2233,6 +2236,13 @@ function(msg)
             "|cffffff00" .. tostring(item.minLevel) .. "|r"
         )
         
+    end
+
+    if item.value then
+        print(
+            "Value:",
+            "|cffffff00" .. tostring(GetCoinTextureString(item.value)) .. "|r"
+        )
     end
     --------------------------------------------------------
     -- Character information
