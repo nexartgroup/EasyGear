@@ -581,6 +581,64 @@ function PU:GetEquippedHeirloom(
 
 end
 
+
+function PU:GetEquippedItems(slot)
+
+    local result = {}
+
+    if not slot then
+        return result
+    end
+
+    local function AddEquipped(slotID)
+
+        local link =
+            GetInventoryItemLink(
+                "player",
+                slotID
+            )
+
+        if not link then
+            return
+        end
+
+        local item =
+            self:GetItemData(link)
+
+        if not item then
+            return
+        end
+
+        item.slotID =
+            slotID
+
+        item.score =
+            self:GetItemScore(item)
+
+        table.insert(
+            result,
+            item
+        )
+
+    end
+
+    if type(slot) == "table" then
+
+        for _, slotID in ipairs(slot) do
+
+            AddEquipped(slotID)
+
+        end
+
+    else
+
+        AddEquipped(slot)
+
+    end
+
+    return result
+end
+
 ------------------------------------------------------------
 -- Check item level requirement
 ------------------------------------------------------------
@@ -741,7 +799,7 @@ function PU:CanEquipItem(itemLink)
         GetLocalizedString(
             "ITEM_SUBCLASS_WEAPON_SWORD",
             "One-Handed Swords",
-            "Schwerter"
+            "Einhandschwerter"
         )
 
     local SWORD_2H =
@@ -3406,6 +3464,12 @@ function(msg)
             slot,
             item
         )
+    --------------------------------------------------------
+    -- Get currently equipped item(s).
+    --------------------------------------------------------
+    
+    local equippedItems =
+        PU:GetEquippedItems(slot)
 
     local difference
 
@@ -3471,7 +3535,7 @@ function(msg)
         ) do
 
             print(
-                tostring(
+                "  " .. tostring(
                     PU:GetLocalizedStatName(stat)
                 ) .. ":",
                 "|cffffff00+"
@@ -3535,7 +3599,99 @@ function(msg)
         )
 
     end
+    
+    
+    --------------------------------------------------------
+    -- Equipped item information
+    --------------------------------------------------------
+    
+    print(
+        "|cffaaaaaa----------------------------------------|r"
+    )
+    
+    print(
+        "|cff00ccffCurrently Equipped|r"
+    )
+    
+    if #equippedItems == 0 then
+    
+        print(
+            "Equipped:",
+            "|cffffcc00Nothing equipped|r"
+        )
+    
+    else
+    
+        for _, equipped in ipairs(
+            equippedItems
+        ) do
+            
+            if equipped.link then
+                print(
+                    "Equipped:",
+                    equipped.link
+                )
+            end
+            
+            if equipped.level then
+                print(
+                    "  Item Level:",
+                    "|cffffff00"
+                    .. tostring(
+                        equipped.level or 0
+                    )
+                    .. "|r"
+                )
+            end
+            
+            if equipped.stats then
+        
+                print(
+                    "  Stats:"
+                )
+        
+                for eqstat, eqvalue in pairs(
+                    equipped.stats
+                ) do
+        
+                    print(
+                        "   " .. tostring(
+                            PU:GetLocalizedStatName(eqstat)
+                        ) .. ":",
+                        "|cffffff00+"
+                        .. tostring(eqvalue)
+                        .. "|r"
+                    )
+        
+                end
+        
+            end
 
+                
+                
+            print(
+                "  Score:",
+                "|cffffff00"
+                .. string.format(
+                    "%.0f",
+                    equipped.score or 0
+                )
+                .. "|r"
+            )
+    
+            if equipped.quality == 7 then
+    
+                print(
+                    "  Quality:",
+                    "|cffffcc00Heirloom|r"
+                )
+    
+            end
+    
+        end
+    
+    end
+    
     --------------------------------------------------------
     -- Character information
     --------------------------------------------------------
