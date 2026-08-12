@@ -1127,48 +1127,104 @@ function PU:IsUpgrade(itemLink)
 
     --------------------------------------------------------
     -- Dual-slot item
+    --
+    -- IMPORTANT:
+    -- If ANY relevant slot contains a Quality 7 heirloom,
+    -- the item is protected until level 80.
     --------------------------------------------------------
-
+    
     if type(slot) == "table" then
-
-        local worstOld =
-            math.huge
-
+    
+        local worstOld = math.huge
+        local heirloomEquipped = false
+    
         for _, slotID in ipairs(slot) do
-
+    
             local oldLink =
                 GetInventoryItemLink(
                     "player",
                     slotID
                 )
-
-            local oldScore =
-                GetOldScore(oldLink)
-
-            if oldScore < worstOld then
-                worstOld = oldScore
+    
+            if oldLink then
+    
+                local oldItem =
+                    self:GetItemData(oldLink)
+    
+                if oldItem then
+    
+                    ------------------------------------------------
+                    -- Heirloom protection
+                    ------------------------------------------------
+    
+                    if self:IsHeirloom(oldItem) then
+    
+                        heirloomEquipped = true
+    
+                    else
+    
+                        local oldScore =
+                            self:GetItemScore(oldItem)
+    
+                        if oldScore < worstOld then
+                            worstOld = oldScore
+                        end
+    
+                    end
+    
+                end
+    
+            else
+    
+                ------------------------------------------------
+                -- Empty slot.
+                --
+                -- Only use this as the comparison target if
+                -- there is no protected heirloom.
+                ------------------------------------------------
+    
+                if not heirloomEquipped
+                    and worstOld > 0
+                then
+                    worstOld = 0
+                end
+    
             end
-
+    
         end
-
-        if worstOld == math.huge then
-
+    
+        --------------------------------------------------------
+        -- ANY equipped heirloom protects the dual-slot item.
+        --------------------------------------------------------
+    
+        if heirloomEquipped then
+    
             return
                 false,
                 newScore,
                 math.huge,
                 slot
-
+    
         end
-
+    
+        --------------------------------------------------------
+        -- No heirloom:
+        -- Compare against the weakest relevant slot.
+        --------------------------------------------------------
+    
+        if worstOld == math.huge then
+    
+            worstOld = 0
+    
+        end
+    
         return
             newScore > worstOld,
             newScore,
             worstOld,
             slot
-
+    
     end
-
     --------------------------------------------------------
     -- Single-slot item
     --------------------------------------------------------
