@@ -753,6 +753,13 @@ function PU:CanEquipItem(itemLink)
     -- Weapons
     --------------------------------------------------------
 
+    local SHIELD =
+        GetLocalizedString(
+            "ITEM_SUBCLASS_WEAPON_SHIELD",
+            "Shields",
+            "Schilde"
+        )
+        
     local DAGGER =
         GetLocalizedString(
             "ITEM_SUBCLASS_WEAPON_DAGGER",
@@ -896,6 +903,8 @@ function PU:CanEquipItem(itemLink)
 
             [POLEARM] = true,
             [STAFF] = true,
+            
+            [SHIELD] = true,
 
             [GUN] = true,
             [BOW] = true,
@@ -920,6 +929,8 @@ function PU:CanEquipItem(itemLink)
 
             [SWORD_1H] = true,
             [SWORD_2H] = true,
+            
+            [SHIELD] = true,
 
             [POLEARM] = true,
 
@@ -1466,20 +1477,66 @@ function PU:GetBestQuestReward()
 
             if item then
 
-                local value =
+                local sellPrice =
                     tonumber(item.sellPrice)
                     or 0
-
+                
+                --------------------------------------------------------
+                -- Quest reward quantity.
+                --
+                -- item.sellPrice is the vendor value of ONE item.
+                -- Quest rewards can contain multiple items in a stack.
+                --
+                -- Example:
+                -- Explosive Rakete:
+                --     unit sell price = 7
+                --     reward count    = 15
+                --     total value     = 105
+                --------------------------------------------------------
+                
+                local rewardButton =
+                    _G[
+                        "QuestInfoItem" .. i
+                    ]
+                
+                local rewardCount =
+                    rewardButton
+                    and tonumber(
+                        rewardButton.count
+                    )
+                    or 1
+                
+                local totalSellPrice =
+                    sellPrice * rewardCount
+                
+                local button =
+                    _G[
+                        "QuestInfoItem" .. i
+                    ]
+                
+                print(
+                    "QUEST BUTTON DEBUG",
+                    i,
+                    "count =", button and button.count,
+                    "Count =", button and button.Count,
+                    "stackCount =", button and button.stackCount,
+                    "quantity =", button and button.quantity,
+                    "text =", button and button.Name and button.Name:GetText()
+                )
+                
+                
                 local score =
                     self:GetItemScore(item)
-                    
-                    print(
-                        "Quest reward",
-                        i,
-                        link,
-                        "value =", item.sellPrice,
-                        "score =", score
-                    )
+                
+                print(
+                    "Quest reward",
+                    i,
+                    link,
+                    "unitValue =", sellPrice,
+                    "count =", rewardCount,
+                    "value =", totalSellPrice,
+                    "score =", score
+                )
 
                 ------------------------------------------------
                 -- FALLBACK:
@@ -1491,17 +1548,17 @@ function PU:GetBestQuestReward()
                 -- valuable reward.
                 ------------------------------------------------
 
-                if value > bestVendorValue then
+                if totalSellPrice > bestVendorValue then
 
                     bestVendorValue =
-                        value
-
+                        totalSellPrice
+                
                     bestVendorButton =
                         i
-
+                
                     bestVendorScore =
                         score
-
+                
                 end
 
                 ------------------------------------------------
@@ -1533,11 +1590,11 @@ function PU:GetBestQuestReward()
                                 i
 
                             bestUpgradeValue =
-                                value
+                                totalSellPrice
 
                         elseif newScore
                             == bestUpgradeScore
-                            and value
+                            and totalSellPrice
                             > bestUpgradeValue
                         then
 
@@ -1552,7 +1609,7 @@ function PU:GetBestQuestReward()
                                 i
 
                             bestUpgradeValue =
-                                value
+                                totalSellPrice
 
                         end
 
