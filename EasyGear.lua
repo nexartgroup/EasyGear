@@ -191,6 +191,11 @@ function PU:GetItemData(itemLink)
             data.stats[stat] = value
         end
     end
+    if quality == 7 then
+        local playerLevel = 
+        UnitLevel("player") or 0
+        data.level = playerLevel
+    end
     return data
 end
 --------------------------------------------------------
@@ -547,7 +552,7 @@ function PU:CanEquipItem(itemLink)
         GetLocalizedString(
             "ITEM_SUBCLASS_ARMOR_PLATE",
             "Plate",
-            "Plattenrüstung"
+            "Platte"
         )
 
     --------------------------------------------------------
