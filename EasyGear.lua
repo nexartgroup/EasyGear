@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.0.0
+    EasyGear 2.0.2
     Gear-Bewertung, Upgrade-Erkennung und Vergleich fuer WoW 3.3.5a (WotLK)
 
     Kompatibilitaet:
@@ -32,7 +32,7 @@
 ------------------------------------------------------------------------------
 
 local ADDON_NAME    = "EasyGear"
-local ADDON_VERSION = "2.0.0"
+local ADDON_VERSION = "2.0.2"
 
 EasyGear = EasyGear or {}
 local EG = EasyGear
@@ -57,7 +57,8 @@ local TEX_VENDOR  = "Interface\\MoneyFrame\\UI-GoldIcon"
 
 -- Standardeinstellungen (SavedVariables)
 local DEFAULTS = {
-    ilvlWeight       = 0.5,     -- Punkte pro Gegenstandsstufe
+    ilvlWeight       = 0.5,     -- Punkte pro Gegenstandsstufe (auf Stufe 80)
+    ilvlScaling      = true,    -- Gegenstandsstufen-Basis mit Charakterstufe skalieren
     dpsWeight        = nil,     -- nil = Wert aus dem Rollenprofil
     socketValue      = 8,       -- Punkte pro freiem Sockelplatz
     showBagIcons     = true,
@@ -67,6 +68,7 @@ local DEFAULTS = {
     protectHeirlooms = true,
     iconSize         = 20,
     minDelta         = 0,       -- Mindestpunkte-Vorsprung fuer "Upgrade"
+    minDeltaPercent  = 1,       -- zusaetzlich: Prozent des Vergleichswerts
     egupCommand      = ".additem {name} {id} {count}",
     egupConfirm      = true,
     egupDelay        = 0.35,
@@ -133,7 +135,7 @@ do
         R_CLASS           = "Not usable by your class or armor proficiency.",
         R_LEVEL           = "You need level %d for this item.",
         R_EMPTY           = "The slot is empty - anything is an improvement.",
-        R_MINDELTA        = "The advantage is below your minimum difference of %d points.",
+        R_MINDELTA        = "The advantage of %s points is within noise - not counted as an upgrade.",
         NOTE_2H           = "A two-handed weapon replaces main hand and off hand.",
         NOTE_OFFHAND      = "A two-handed weapon is equipped - the off hand slot is unavailable.",
         NOTE_HEIRLOOM_EST = "Heirloom values are read from the tooltip and are approximate.",
@@ -158,7 +160,8 @@ do
         SET_OFF           = "disabled",
         SET_RESET         = "Settings reset to defaults.",
         SET_SCALE         = "Window scale: %s",
-        SET_MINDELTA      = "Minimum difference: %d points",
+        SET_MINDELTA      = "Minimum difference: %s points (+ %s%% relative)",
+        SET_ILVLSCALE     = "Item level base scales with character level: %s (currently x%s)",
         -- EGUP
         EGUP_NO_TARGET    = "Target a player first.",
         EGUP_NOT_PLAYER   = "The target is not a player.",
@@ -182,12 +185,12 @@ do
         local de = {
             LOADED            = "EasyGear %s geladen.",
             CMD_HEADER        = "Befehle:",
-            CMD_EG            = "/eg            - Vergleichsfenster oeffnen",
+            CMD_EG            = "/eg            - Vergleichsfenster \195\182ffnen",
             CMD_EG_LINK       = "/eg <itemlink> - Item im Chat auswerten",
             CMD_EG_HELP       = "/eg help       - alle Optionen anzeigen",
             CMD_EGUP          = "/egup          - GM: Klassenpaket an das Ziel geben",
             CMD_EGUPCLEAN     = "/egupclean     - erfasste EGUP-Items aus den Taschen entfernen",
-            INVALID_ITEM      = "Item-Informationen konnten nicht gelesen werden. Bitte einen gueltigen Itemlink angeben.",
+            INVALID_ITEM      = "Item-Informationen konnten nicht gelesen werden. Bitte einen g\195\188ltigen Itemlink angeben.",
             ITEM_LOADING      = "Die Item-Daten sind noch nicht im Cache - bitte gleich noch einmal versuchen.",
             TITLE             = "EasyGear - Item-Vergleich",
             CANDIDATE         = "Zu vergleichendes Item",
@@ -199,9 +202,9 @@ do
             SLOT              = "Slot",
             TYPE              = "Typ",
             SUBTYPE           = "Untertyp",
-            REQLEVEL          = "Benoetigte Stufe",
-            SELLPRICE         = "Haendlerpreis",
-            QUALITY           = "Qualitaet",
+            REQLEVEL          = "Ben\195\182tigte Stufe",
+            SELLPRICE         = "H\195\164ndlerpreis",
+            QUALITY           = "Qualit\195\164t",
             STAT              = "Attribut",
             VALUE             = "Wert",
             WEIGHT            = "Gewicht",
@@ -215,21 +218,21 @@ do
             NO_UPGRADE        = "KEINE VERBESSERUNG",
             NOT_USABLE        = "NICHT VERWENDBAR",
             PROFILE           = "Profil",
-            HEIRLOOM          = "Erbstueck",
-            PROTECTED         = "geschuetzt",
-            R_HEIRLOOM        = "Ein angelegtes Erbstueck gilt unterhalb von Stufe %d als bestes Item des Slots.",
-            R_LOWER           = "Das angelegte Item hat die hoehere Wertung.",
+            HEIRLOOM          = "Erbst\195\188ck",
+            PROTECTED         = "gesch\195\188tzt",
+            R_HEIRLOOM        = "Ein angelegtes Erbst\195\188ck gilt unterhalb von Stufe %d als bestes Item des Slots.",
+            R_LOWER           = "Das angelegte Item hat die h\195\182here Wertung.",
             R_EQUAL           = "Gleiche Wertung wie das angelegte Item.",
-            R_CLASS           = "Fuer deine Klasse bzw. Ruestungsklasse nicht verwendbar.",
-            R_LEVEL           = "Du benoetigst Stufe %d fuer dieses Item.",
+            R_CLASS           = "F\195\188r deine Klasse bzw. R\195\188stungsklasse nicht verwendbar.",
+            R_LEVEL           = "Du ben\195\182tigst Stufe %d f\195\188r dieses Item.",
             R_EMPTY           = "Der Slot ist leer - alles ist eine Verbesserung.",
-            R_MINDELTA        = "Der Vorsprung liegt unter deiner Mindestdifferenz von %d Punkten.",
+            R_MINDELTA        = "Der Vorsprung liegt unter der Schwelle von %s Punkten - das ist Rauschen.",
             NOTE_2H           = "Eine Zweihandwaffe ersetzt Waffenhand und Schildhand.",
             NOTE_OFFHAND      = "Es ist eine Zweihandwaffe angelegt - die Schildhand ist belegt.",
-            NOTE_HEIRLOOM_EST = "Erbstueck-Werte werden aus dem Tooltip gelesen und sind Naeherungswerte.",
+            NOTE_HEIRLOOM_EST = "Erbst\195\188ck-Werte werden aus dem Tooltip gelesen und sind N\195\164herungswerte.",
             BTN_CLEAR         = "Leeren",
             BTN_CHAT          = "In den Chat",
-            BTN_CLOSE         = "Schliessen",
+            BTN_CLOSE         = "Schlie\195\159en",
             GUI_SLOT1         = "Slot 1",
             GUI_SLOT2         = "Slot 2",
             GUI_COMPARED      = "verglichen mit",
@@ -243,24 +246,25 @@ do
             SET_ILVL          = "Gewicht Gegenstandsstufe: %s",
             SET_ON            = "aktiviert",
             SET_OFF           = "deaktiviert",
-            SET_RESET         = "Einstellungen auf Standard zurueckgesetzt.",
-            SET_SCALE         = "Fenstergroesse: %s",
-            SET_MINDELTA      = "Mindestdifferenz: %d Punkte",
+            SET_RESET         = "Einstellungen auf Standard zur\195\188ckgesetzt.",
+            SET_SCALE         = "Fenstergr\195\182\195\159e: %s",
+            SET_MINDELTA      = "Mindestdifferenz: %s Punkte (+ %s%% relativ)",
+            SET_ILVLSCALE     = "Basis Gegenstandsstufe skaliert mit Charakterstufe: %s (aktuell x%s)",
             EGUP_NO_TARGET    = "Bitte zuerst einen Spieler anvisieren.",
             EGUP_NOT_PLAYER   = "Das Ziel ist kein Spieler.",
             EGUP_NO_CLASS     = "Die Klasse des Ziels konnte nicht ermittelt werden.",
-            EGUP_NO_PACKAGE   = "Kein Paket fuer %s konfiguriert.",
-            EGUP_CONFIRM      = "Paket %s (%d Eintraege) an %s senden?",
+            EGUP_NO_PACKAGE   = "Kein Paket f\195\188r %s konfiguriert.",
+            EGUP_CONFIRM      = "Paket %s (%d Eintr\195\164ge) an %s senden?",
             EGUP_RUNNING      = "Sende Paket an %s ...",
             EGUP_DONE         = "EGUP abgeschlossen.",
-            EGUP_HINT         = "Nach dem Anlegen der gewuenschten Items /egupclean benutzen.",
-            EGUP_NO_SESSION   = "Keine EGUP-Sitzung zum Aufraeumen vorhanden.",
-            EGUP_WRONG_CHAR   = "EGUPCLEAN muss von dem Charakter ausgefuehrt werden, der das Paket erhalten hat (%s).",
+            EGUP_HINT         = "Nach dem Anlegen der gew\195\188nschten Items /egupclean benutzen.",
+            EGUP_NO_SESSION   = "Keine EGUP-Sitzung zum Aufr\195\164umen vorhanden.",
+            EGUP_WRONG_CHAR   = "EGUPCLEAN muss von dem Charakter ausgef\195\188hrt werden, der das Paket erhalten hat (%s).",
             EGUP_CLEAN_START  = "Durchsuche Taschen nach Items der letzten EGUP-Sitzung ...",
-            EGUP_CLEAN_NONE   = "Nichts aufzuraeumen.",
+            EGUP_CLEAN_NONE   = "Nichts aufzur\195\164umen.",
             EGUP_CLEAN_DONE   = "EGUPCLEAN abgeschlossen - %d Item(s) entfernt.",
-            HOOK_ELVUI        = "ElvUI-Taschenunterstuetzung aktiviert.",
-            HOOK_BAGNON       = "Bagnon-Taschenunterstuetzung aktiviert.",
+            HOOK_ELVUI        = "ElvUI-Taschenunterst\195\188tzung aktiviert.",
+            HOOK_BAGNON       = "Bagnon-Taschenunterst\195\188tzung aktiviert.",
         }
         for k, v in pairs(de) do strings[k] = v end
     end
@@ -303,6 +307,27 @@ function EG:Debug(...)
     end
 end
 
+--[[ Wertungen als Text.
+     Auf niedrigen Stufen liegen die Wertungen im Bereich 0-5, auf Stufe 80
+     im dreistelligen Bereich - die Nachkommastellen richten sich deshalb
+     nach der Groessenordnung.                                             ]]
+local function FmtScore(v)
+    if not v then return "0" end
+    if v == mhuge then return "-" end
+    if v == -mhuge then return "-" end
+    local a = (v < 0) and -v or v
+    if a < 10  then return sformat("%.2f", v) end
+    if a < 100 then return sformat("%.1f", v) end
+    return sformat("%.0f", v)
+end
+
+local function FmtWeight(v)
+    if not v then return "0" end
+    local a = (v < 0) and -v or v
+    if a > 0 and a < 0.1 then return sformat("%.3f", v) end
+    return sformat("%.2f", v)
+end
+
 -- Zahl gerundet als String
 local function Num(v, decimals)
     if not v then return "0" end
@@ -311,7 +336,9 @@ local function Num(v, decimals)
     end
     return sformat("%d", v + (v >= 0 and 0.5 or -0.5))
 end
-EG.Num = function(_, v, d) return Num(v, d) end
+EG.Num       = function(_, v, d) return Num(v, d) end
+EG.FmtScore  = function(_, v) return FmtScore(v) end
+EG.FmtWeight = function(_, v) return FmtWeight(v) end
 
 -- Muster-Sonderzeichen entschaerfen
 local function EscapePattern(s)
@@ -514,12 +541,12 @@ local PROFILES = {
     MELEE_STR = mk({
         STR = 1.00, AGI = 0.35, STA = 0.15, AP = 0.50,
         HIT = 1.00, EXP = 0.90, CRIT = 0.80, HASTE = 0.70, ARP = 0.80,
-        ARMOR = 0.01, __DPS = 6.0,
+        ARMOR = 0.02, __DPS = 6.0,
     }),
     MELEE_AGI = mk({
         AGI = 1.00, STR = 0.45, STA = 0.15, AP = 0.50,
         HIT = 1.00, EXP = 0.90, CRIT = 0.75, HASTE = 0.70, ARP = 0.80,
-        ARMOR = 0.01, __DPS = 6.0,
+        ARMOR = 0.02, __DPS = 6.0,
     }),
     RANGED = mk({
         AGI = 1.00, STA = 0.15, RAP = 0.50, AP = 0.40, INT = 0.15,
@@ -544,10 +571,15 @@ local PROFILES = {
         __DPS = 2.0,
     }),
     -- Fallback fuer sehr niedrige Stufen ohne Talente
+    -- Fallback fuer sehr niedrige Stufen ohne Talente.
+    -- Ruestung ist hier bewusst hoeher gewichtet: unterhalb von Stufe 15
+    -- unterscheiden sich Items fast nur ueber Ruestung und ein bis zwei
+    -- Attribute, und die Ruestungsklasse (Stoff/Leder/Kette) ist der
+    -- groesste einzelne Unterschied.
     LOWLEVEL = mk({
         STR = 0.60, AGI = 0.60, INT = 0.60, SPI = 0.30, STA = 0.50,
         AP = 0.30, SP = 0.60, CRIT = 0.40, HIT = 0.40, HASTE = 0.30,
-        ARMOR = 0.02, __DPS = 4.0,
+        ARMOR = 0.06, __DPS = 4.0,
     }),
 }
 EG.PROFILES = PROFILES
@@ -661,6 +693,7 @@ function EG:GetProfile()
 
     local sig = class .. ":" .. profileName .. ":" .. tostring(UnitLevel("player"))
         .. ":" .. tostring(self.db and self.db.ilvlWeight)
+        .. ":" .. tostring(self.db and self.db.ilvlScaling)
 
     self.profileCache = { weights = weights, name = label, sig = sig,
                           profile = profileName }
@@ -829,6 +862,26 @@ end
 -- 08  Bewertung & Berechnungsgrundlagen
 ------------------------------------------------------------------------------
 
+--[[ Wirksames Gewicht der Gegenstandsstufe.
+
+     Die Statgewichte sind auf Stufe-80-Groessenordnungen kalibriert: dort
+     traegt ein Item dreistellige Attributwerte, auf Stufe 5 dagegen
+     einstellige. Ein fester Punktwert pro Gegenstandsstufe uebertoent
+     deshalb im gesamten Levelbereich darunter die eigentlichen Attribute -
+     eine Gegenstandsstufe mehr wog dann schwerer als der sechsfache
+     Ruestungswert.
+
+     Die Basis waechst daher mit der Charakterstufe und erreicht erst auf
+     Stufe 80 das volle Gewicht. Abschaltbar mit /eg ilvlscale.            ]]
+function EG:GetEffectiveIlvlWeight()
+    local db = self.db or DEFAULTS
+    local w = tonumber(db.ilvlWeight) or DEFAULTS.ilvlWeight
+    if db.ilvlScaling == false then return w, w, 1 end
+    local level  = mmin(UnitLevel("player") or 1, HEIRLOOM_MAX_LEVEL)
+    local factor = level / HEIRLOOM_MAX_LEVEL
+    return w * factor, w, factor
+end
+
 --[[ Liefert Wertung + vollstaendige Berechnungsgrundlage.
      breakdown = Liste von { key, label, value, weight, points }           ]]
 function EG:GetScoreBreakdown(item)
@@ -838,8 +891,8 @@ function EG:GetScoreBreakdown(item)
     local weights = self:GetProfile()
     local db = self.db or DEFAULTS
 
-    -- 1) Basis aus der Gegenstandsstufe
-    local ilvlWeight = tonumber(db.ilvlWeight) or DEFAULTS.ilvlWeight
+    -- 1) Basis aus der Gegenstandsstufe (mit Charakterstufe skaliert)
+    local ilvlWeight = self:GetEffectiveIlvlWeight()
     local ilvlPoints = (item.level or 0) * ilvlWeight
     if ilvlWeight > 0 then
         rows[#rows + 1] = {
@@ -950,9 +1003,9 @@ local SLOT_NAME_GLOBALS = {
 
 local SLOT_NAME_FALLBACK_DE = {
     [1]="Kopf", [2]="Hals", [3]="Schultern", [4]="Hemd", [5]="Brust",
-    [6]="Taille", [7]="Beine", [8]="Fuesse", [9]="Handgelenke", [10]="Haende",
+    [6]="Taille", [7]="Beine", [8]="F\195\188\195\159e", [9]="Handgelenke", [10]="H\195\164nde",
     [11]="Ring 1", [12]="Ring 2", [13]="Schmuck 1", [14]="Schmuck 2",
-    [15]="Ruecken", [16]="Waffenhand", [17]="Schildhand", [18]="Distanz",
+    [15]="R\195\188cken", [16]="Waffenhand", [17]="Schildhand", [18]="Distanz",
     [19]="Wappenrock",
 }
 
@@ -964,6 +1017,25 @@ local SLOT_NAME_FALLBACK_EN = {
     [19]="Tabard",
 }
 
+--[[ Blizzard liefert fuer beide Ring- und beide Schmuckslots denselben
+     lokalisierten String (deDE: zweimal "Schmuck", zweimal "Ring"). Damit
+     sich Slot 1 und Slot 2 unterscheiden lassen, wird in diesem Fall
+     nummeriert.                                                           ]]
+local SLOT_PAIRS = {
+    [11] = { partner = 12, index = 1 },
+    [12] = { partner = 11, index = 2 },
+    [13] = { partner = 14, index = 1 },
+    [14] = { partner = 13, index = 2 },
+}
+
+local function RawSlotName(slotID)
+    local g = SLOT_NAME_GLOBALS[slotID]
+    local name = g and _G[g]
+    if name and name ~= "" then return name end
+    local fb = (GetLocale() == "deDE") and SLOT_NAME_FALLBACK_DE or SLOT_NAME_FALLBACK_EN
+    return fb[slotID] or tostring(slotID)
+end
+
 function EG:GetSlotName(slotID)
     if type(slotID) == "table" then
         local names = {}
@@ -972,11 +1044,13 @@ function EG:GetSlotName(slotID)
     end
     slotID = tonumber(slotID)
     if not slotID then return "?" end
-    local g = SLOT_NAME_GLOBALS[slotID]
-    local name = g and _G[g]
-    if name and name ~= "" then return name end
-    local fb = (GetLocale() == "deDE") and SLOT_NAME_FALLBACK_DE or SLOT_NAME_FALLBACK_EN
-    return fb[slotID] or tostring(slotID)
+
+    local name = RawSlotName(slotID)
+    local pair = SLOT_PAIRS[slotID]
+    if pair and name == RawSlotName(pair.partner) then
+        name = name .. " " .. pair.index
+    end
+    return name
 end
 
 -- Klassen, die grundsaetzlich beidhaendig kaempfen koennen
@@ -1354,16 +1428,25 @@ function EG:Compare(itemLink)
 
     result.delta = result.score - result.targetScore
 
+    --[[ Schwelle fuer "Verbesserung".
+         Absolut UND relativ: bei kleinen Wertungen (niedrige Stufen) ist
+         ein Vorsprung von 0.1 Punkten Rauschen, kein Upgrade.            ]]
     local minDelta = tonumber(self.db and self.db.minDelta) or 0
-    result.isUpgrade = (usable == true) and (result.delta > 0) and (result.delta >= minDelta)
+    local pct      = tonumber(self.db and self.db.minDeltaPercent) or 0
+    local relative = (result.targetScore > 0) and (result.targetScore * pct / 100) or 0
+    local threshold = mmax(minDelta, relative)
+    result.threshold = threshold
+
+    result.isUpgrade = (usable == true) and (result.delta > 0)
+        and (result.delta >= threshold)
 
     if not result.reason then
         if usable ~= true then
             -- reason wurde bereits von CanUseItem gesetzt
         elseif result.target and result.target.empty then
             result.reason = L.R_EMPTY
-        elseif result.delta > 0 and result.delta < minDelta then
-            result.reason = sformat(L.R_MINDELTA, minDelta)
+        elseif result.delta > 0 and result.delta < threshold then
+            result.reason = sformat(L.R_MINDELTA, FmtScore(threshold))
         elseif result.delta == 0 then
             result.reason = L.R_EQUAL
         elseif result.delta < 0 then
@@ -1782,7 +1865,7 @@ local function AddTooltipInfo(tooltip)
     tooltip:AddLine(" ")
     tooltip:AddDoubleLine(
         COLOR.title .. "EasyGear" .. COLOR.reset,
-        COLOR.value .. L.SCORE .. ": " .. Num(result.score) .. COLOR.reset)
+        COLOR.value .. L.SCORE .. ": " .. FmtScore(result.score) .. COLOR.reset)
 
     if result.usable ~= true then
         tooltip:AddLine(COLOR.bad .. (result.reason or L.NOT_USABLE) .. COLOR.reset, nil, nil, nil, true)
@@ -1801,7 +1884,7 @@ local function AddTooltipInfo(tooltip)
         if result.target.empty then
             targetText = L.NOTHING_EQUIPPED
         else
-            targetText = Num(result.targetScore)
+            targetText = FmtScore(result.targetScore)
         end
         tooltip:AddDoubleLine(
             COLOR.grey .. EG:GetSlotName(result.target.slotID) .. COLOR.reset,
@@ -1810,11 +1893,11 @@ local function AddTooltipInfo(tooltip)
 
     local delta = result.delta or 0
     if result.isUpgrade then
-        tooltip:AddLine(COLOR.good .. L.UPGRADE .. "  +" .. Num(delta) .. COLOR.reset)
+        tooltip:AddLine(COLOR.good .. L.UPGRADE .. "  +" .. FmtScore(delta) .. COLOR.reset)
     elseif delta > 0 then
-        tooltip:AddLine(COLOR.warn .. L.NO_UPGRADE .. "  +" .. Num(delta) .. COLOR.reset)
+        tooltip:AddLine(COLOR.warn .. L.NO_UPGRADE .. "  +" .. FmtScore(delta) .. COLOR.reset)
     else
-        tooltip:AddLine(COLOR.bad .. L.NO_UPGRADE .. "  " .. Num(delta) .. COLOR.reset)
+        tooltip:AddLine(COLOR.bad .. L.NO_UPGRADE .. "  " .. FmtScore(delta) .. COLOR.reset)
     end
 
     tooltip:Show()
@@ -2206,11 +2289,11 @@ end
 local LINE = COLOR.grey .. "----------------------------------------" .. COLOR.reset
 
 local function FmtRow(row)
-    return sformat("  %-24s %8s  x %-5s = %s%s%s",
+    return sformat("  %-24s %8s  x %-6s = %s%s%s",
         tostring(row.label),
         Num(row.value, (row.value % 1 ~= 0) and 1 or 0),
-        Num(row.weight, 2),
-        COLOR.value, Num(row.points, 1), COLOR.reset)
+        FmtWeight(row.weight),
+        COLOR.value, FmtScore(row.points), COLOR.reset)
 end
 
 function EG:PrintBreakdown(rows, total)
@@ -2224,7 +2307,7 @@ function EG:PrintBreakdown(rows, total)
         self:Raw(FmtRow(row))
     end
     self:Raw(sformat("  %-24s %8s  %-7s   %s%s%s",
-        L.TOTAL, "", "", COLOR.good, Num(total, 1), COLOR.reset))
+        L.TOTAL, "", "", COLOR.good, FmtScore(total), COLOR.reset))
 end
 
 function EG:PrintReport(itemLink)
@@ -2289,8 +2372,8 @@ function EG:PrintReport(itemLink)
         local sign  = delta > 0 and "+" or ""
         local col   = result.isUpgrade and COLOR.good or (delta > 0 and COLOR.warn or COLOR.bad)
         self:Raw(sformat("%s: %s%s%s   %s -> %s",
-            L.DIFFERENCE, col, sign .. Num(delta, 1), COLOR.reset,
-            Num(result.targetScore, 1), Num(result.score, 1)))
+            L.DIFFERENCE, col, sign .. FmtScore(delta), COLOR.reset,
+            FmtScore(result.targetScore), FmtScore(result.score)))
         if result.isUpgrade then
             self:Raw(COLOR.good .. ">> " .. L.UPGRADE .. COLOR.reset)
         else
@@ -2315,7 +2398,9 @@ function EG:PrintHelp()
     self:Raw(COLOR.value .. "/eggui" .. COLOR.reset)
     self:Raw(COLOR.value .. "/eg role <auto|tank|melee|ranged|caster|heal>" .. COLOR.reset)
     self:Raw(COLOR.value .. "/eg ilvl <zahl>" .. COLOR.reset)
+    self:Raw(COLOR.value .. "/eg ilvlscale <on|off>" .. COLOR.reset)
     self:Raw(COLOR.value .. "/eg mindelta <zahl>" .. COLOR.reset)
+    self:Raw(COLOR.value .. "/eg mindeltapct <prozent>" .. COLOR.reset)
     self:Raw(COLOR.value .. "/eg icons | quest | tooltip | heirloom" .. COLOR.reset)
     self:Raw(COLOR.value .. "/eg scale <0.6-1.5>" .. COLOR.reset)
     self:Raw(COLOR.value .. "/eg status" .. COLOR.reset)
@@ -2329,8 +2414,12 @@ function EG:PrintStatus()
     self:Raw(COLOR.title .. "EasyGear " .. ADDON_VERSION .. COLOR.reset)
     self:Raw(L.PROFILE .. ": " .. COLOR.value .. tostring(profileName) .. COLOR.reset
         .. " (" .. tostring(self.charDB.role) .. ")")
-    self:Raw(L.SET_ILVL:format(tostring(self.db.ilvlWeight)))
-    self:Raw(L.SET_MINDELTA:format(self.db.minDelta or 0))
+    local eff, base, factor = self:GetEffectiveIlvlWeight()
+    self:Raw(L.SET_ILVL:format(FmtWeight(base) .. " -> " .. FmtWeight(eff)))
+    self:Raw(L.SET_ILVLSCALE:format(OnOff(self.db.ilvlScaling ~= false),
+        FmtWeight(factor)))
+    self:Raw(L.SET_MINDELTA:format(FmtScore(self.db.minDelta or 0),
+        tostring(self.db.minDeltaPercent or 0)))
     self:Raw("Bags: " .. OnOff(self.db.showBagIcons)
         .. " | Quest: " .. OnOff(self.db.showQuestIcons)
         .. " | Tooltip: " .. OnOff(self.db.showTooltip)
@@ -2392,12 +2481,32 @@ SlashCmdList["EASYGEAR"] = function(msg)
             EG:RefreshAllBags()
             if EG.GUI then EG.GUI:Refresh() end
         end
-        EG:Print(L.SET_ILVL:format(tostring(EG.db.ilvlWeight)))
+        local eff = EG:GetEffectiveIlvlWeight()
+        EG:Print(L.SET_ILVL:format(FmtWeight(EG.db.ilvlWeight) .. " -> " .. FmtWeight(eff)))
         return
     elseif cmd == "mindelta" then
         local v = tonumber(rest)
-        if v then EG.db.minDelta = v; EG:RefreshAllBags() end
-        EG:Print(L.SET_MINDELTA:format(EG.db.minDelta or 0))
+        if v then EG.db.minDelta = v; EG:InvalidateProfile(); EG:RefreshAllBags() end
+        EG:Print(L.SET_MINDELTA:format(FmtScore(EG.db.minDelta or 0),
+            tostring(EG.db.minDeltaPercent or 0)))
+        return
+    elseif cmd == "mindeltapct" then
+        local v = tonumber(rest)
+        if v then EG.db.minDeltaPercent = v; EG:InvalidateProfile(); EG:RefreshAllBags() end
+        EG:Print(L.SET_MINDELTA:format(FmtScore(EG.db.minDelta or 0),
+            tostring(EG.db.minDeltaPercent or 0)))
+        return
+    elseif cmd == "ilvlscale" then
+        if rest == "on"  then EG.db.ilvlScaling = true  end
+        if rest == "off" then EG.db.ilvlScaling = false end
+        if rest == ""    then EG.db.ilvlScaling = (EG.db.ilvlScaling == false) end
+        EG:InvalidateProfile()
+        EG:WipeItemCache()
+        EG:RefreshAllBags()
+        if EG.GUI then EG.GUI:Refresh() end
+        local eff, _, factor = EG:GetEffectiveIlvlWeight()
+        EG:Print(L.SET_ILVLSCALE:format(OnOff(EG.db.ilvlScaling ~= false),
+            FmtWeight(factor)) .. "  ->  " .. FmtWeight(eff))
         return
     elseif cmd == "icons" then
         Toggle("showBagIcons"); return

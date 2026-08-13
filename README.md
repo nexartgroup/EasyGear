@@ -34,8 +34,10 @@ Danach `/reload` oder Client neu starten.
 | `/eg <itemlink>` | ausführliche Auswertung im Chat |
 | `/eg <itemID>` | Auswertung über die Item-ID |
 | `/eg role <auto\|tank\|melee\|ranged\|caster\|heal>` | Rollenprofil festlegen |
-| `/eg ilvl <zahl>` | Gewicht der Gegenstandsstufe |
-| `/eg mindelta <zahl>` | Mindestvorsprung für „Verbesserung" |
+| `/eg ilvl <zahl>` | Gewicht der Gegenstandsstufe (auf Stufe 80) |
+| `/eg ilvlscale <on\|off>` | Skalierung der Gegenstandsstufe mit der Charakterstufe |
+| `/eg mindelta <zahl>` | absoluter Mindestvorsprung für „Verbesserung" |
+| `/eg mindeltapct <prozent>` | relativer Mindestvorsprung (Standard 1 %) |
 | `/eg icons` / `quest` / `tooltip` / `heirloom` | Anzeigen ein-/ausschalten |
 | `/eg scale <0.5–2.0>` | Fenstergröße |
 | `/eg status` | aktuelle Einstellungen |
@@ -60,11 +62,41 @@ Rechtsklick auf das Ablagefeld leert es. Der Knopf „In den Chat" gibt dieselbe
 ## Bewertung
 
 ```
-Wertung = Gegenstandsstufe × ilvlWeight
+Wertung = Gegenstandsstufe × ilvlWeight × (Charakterstufe / 80)
         + Σ (Attribut × Gewicht)
         + Waffen-DPS × Gewicht
         + freie Sockel × socketValue
 ```
+
+### Warum die Gegenstandsstufe mit der Charakterstufe skaliert
+
+Die Statgewichte sind auf Stufe-80-Größenordnungen kalibriert: dort trägt ein Item
+dreistellige Attributwerte, auf Stufe 5 dagegen einstellige. Ein **fester** Punktwert
+pro Gegenstandsstufe übertönt deshalb im gesamten Bereich darunter die eigentlichen
+Attribute — eine Gegenstandsstufe mehr wog dann schwerer als der sechsfache
+Rüstungswert:
+
+```
+Ausgefranste Armschienen   ilvl 5, 4 Rüstung    2.50 + 0.08 = 2.58  <- galt als Upgrade
+Sehr leichte Kettenarm.    ilvl 4, 25 Rüstung   2.00 + 0.50 = 2.50
+```
+
+Mit der Skalierung (Charakterstufe 5, wirksames Gewicht 0.03) und der höheren
+Rüstungsgewichtung im Anfängerprofil:
+
+```
+Ausgefranste Armschienen   0.16 + 0.24 = 0.40
+Sehr leichte Kettenarm.    0.13 + 1.50 = 1.62  <- korrekt bevorzugt
+```
+
+Auf Stufe 80 ist der Faktor 1, dort ändert sich nichts. Abschaltbar mit
+`/eg ilvlscale off`.
+
+### Schwelle für „Verbesserung"
+
+Ein Vorsprung von 0.1 Punkten bei einer Wertung von 2.5 ist Rauschen. Die Schwelle
+ist deshalb absolut **und** relativ: `max(minDelta, minDeltaPercent % des
+Vergleichswerts)`, standardmäßig 1 %.
 
 Die Gewichte kommen aus einem **Rollenprofil**. Das Profil wird automatisch aus dem Talentbaum mit den meisten Punkten abgeleitet (z. B. Paladin Schutz → Tank, Schamane Elementar → Caster) und lässt sich mit `/eg role` oder dem Knopf im Fenster überschreiben. Unter Stufe 15 greift ein neutrales Anfängerprofil.
 
@@ -135,6 +167,7 @@ Item-IDs stehen in der Tabelle `EGUP_ITEMS`, die Klassenzuordnung in `EGUP_PACKA
 
 ## Bekannte Grenzen
 
+* Wertungen liegen auf niedrigen Stufen im Bereich 0–5 und auf Stufe 80 im dreistelligen Bereich. Die Zahl ist eine relative Rangfolge, kein absoluter Wert — vergleichbar sind nur Wertungen desselben Charakters zum selben Zeitpunkt.
 * Die Wertung ist eine Heuristik. Trefferwertungs-Obergrenzen, Setboni, Prozeduren und Waffengeschwindigkeit werden nicht bewertet.
 * Erbstückwerte stammen aus dem Tooltip und sind Näherungswerte.
 * Wie in 1.x kann der Client identische Exemplare desselben Items nicht auseinanderhalten; `/egupclean` arbeitet deshalb mit den erfassten Mengen.

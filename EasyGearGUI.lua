@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.0.0 - Vergleichsfenster  (/eggui)
+    EasyGear 2.0.2 - Vergleichsfenster  (/eggui)
 
     Links:  das abgelegte Item mit allen Berechnungsgrundlagen
     Rechts: das aktuell angelegte Gegenstueck mit derselben Aufschluesselung
@@ -24,8 +24,8 @@ local tonumber, tostring, ipairs, pairs = tonumber, tostring, ipairs, pairs
 -- Layout-Konstanten
 ------------------------------------------------------------------------------
 
-local FRAME_W, FRAME_H = 660, 500
-local PANEL_W, PANEL_H = 310, 360
+local FRAME_W, FRAME_H = 660, 530
+local PANEL_W, PANEL_H = 310, 376
 local MAX_ROWS         = 14
 local ROW_H            = 15
 
@@ -55,6 +55,10 @@ local function Num(v, d)
     if d and d > 0 then return sformat("%." .. d .. "f", v) end
     return sformat("%d", v + (v >= 0 and 0.5 or -0.5))
 end
+
+-- Nachkommastellen nach Groessenordnung (niedrige Stufen -> kleine Wertungen)
+local function FmtScore(v)   return EG:FmtScore(v)  end
+local function FmtWeight(v)  return EG:FmtWeight(v) end
 
 local function MakeText(parent, template, justify)
     local fs = parent:CreateFontString(nil, "OVERLAY", template or "GameFontHighlightSmall")
@@ -106,26 +110,40 @@ local function BuildSide(parent, name, withItemSlot)
         textLeft = 58
     end
 
+    local textWidth = PANEL_W - textLeft - 12
+
     side.itemName = MakeText(side.panel, "GameFontNormalSmall")
-    side.itemName:SetPoint("TOPLEFT", side.panel, "TOPLEFT", textLeft, -28)
-    side.itemName:SetWidth(PANEL_W - textLeft - 12)
-    side.itemName:SetHeight(28)
+    side.itemName:SetPoint("TOPLEFT", side.panel, "TOPLEFT", textLeft, -26)
+    side.itemName:SetWidth(textWidth)
+    side.itemName:SetHeight(26)
     side.itemName:SetJustifyV("TOP")
 
+    --[[ Zwei feste Metazeilen statt einer umbrechenden.
+         Bei langen Angaben ("Gegenstandsstufe 8 | Einhandstreitkolben |
+         Waffenhand | Erbstueck") lief die einzelne Zeile sonst ueber die
+         Trennlinie hinaus.                                               ]]
     side.itemMeta = MakeText(side.panel, "GameFontDisableSmall")
-    side.itemMeta:SetPoint("TOPLEFT", side.panel, "TOPLEFT", textLeft, -58)
-    side.itemMeta:SetWidth(PANEL_W - textLeft - 12)
+    side.itemMeta:SetPoint("TOPLEFT", side.panel, "TOPLEFT", textLeft, -55)
+    side.itemMeta:SetWidth(textWidth)
+    side.itemMeta:SetHeight(12)
+    side.itemMeta:SetJustifyV("TOP")
+
+    side.itemMeta2 = MakeText(side.panel, "GameFontDisableSmall")
+    side.itemMeta2:SetPoint("TOPLEFT", side.panel, "TOPLEFT", textLeft, -69)
+    side.itemMeta2:SetWidth(textWidth)
+    side.itemMeta2:SetHeight(12)
+    side.itemMeta2:SetJustifyV("TOP")
 
     -- Trennlinie
     local sep = side.panel:CreateTexture(nil, "ARTWORK")
     sep:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
     sep:SetVertexColor(0.4, 0.4, 0.4, 0.6)
     sep:SetHeight(1)
-    sep:SetPoint("TOPLEFT", side.panel, "TOPLEFT", 10, -76)
-    sep:SetPoint("TOPRIGHT", side.panel, "TOPRIGHT", -10, -76)
+    sep:SetPoint("TOPLEFT", side.panel, "TOPLEFT", 10, -86)
+    sep:SetPoint("TOPRIGHT", side.panel, "TOPRIGHT", -10, -86)
 
     -- Spaltenkopf
-    local hy = -84
+    local hy = -92
     side.colStat   = MakeText(side.panel, "GameFontNormalSmall", "LEFT")
     side.colStat:SetPoint("TOPLEFT", side.panel, "TOPLEFT", 10, hy)
     side.colStat:SetText(L.STAT)
@@ -145,7 +163,7 @@ local function BuildSide(parent, name, withItemSlot)
     -- Zeilen
     side.rows = {}
     for i = 1, MAX_ROWS do
-        local y = -100 - (i - 1) * ROW_H
+        local y = -108 - (i - 1) * ROW_H
         local row = {}
         row.label = MakeText(side.panel, "GameFontHighlightSmall", "LEFT")
         row.label:SetPoint("TOPLEFT", side.panel, "TOPLEFT", 10, y)
@@ -168,7 +186,7 @@ local function BuildSide(parent, name, withItemSlot)
     end
 
     -- Summe
-    local ty = -104 - MAX_ROWS * ROW_H
+    local ty = -114 - MAX_ROWS * ROW_H
     local sep2 = side.panel:CreateTexture(nil, "ARTWORK")
     sep2:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
     sep2:SetVertexColor(0.4, 0.4, 0.4, 0.6)
@@ -206,6 +224,7 @@ local function FillSide(side, item, rows, total, link, extraMeta)
     if not item then
         side.itemName:SetText("")
         side.itemMeta:SetText("")
+        side.itemMeta2:SetText("")
         side.totalValue:SetText("")
         if side.icon then side.icon:Hide() end
         if side.slot then
@@ -222,10 +241,9 @@ local function FillSide(side, item, rows, total, link, extraMeta)
     side.itemName:SetText(item.name or "?")
     side.itemName:SetTextColor(r, g, b)
 
-    local meta = sformat("%s %s  |  %s", L.ILVL, tostring(item.level or 0),
-        tostring(item.itemSubType or item.itemType or ""))
-    if extraMeta then meta = meta .. "  |  " .. extraMeta end
-    side.itemMeta:SetText(meta)
+    side.itemMeta:SetText(sformat("%s %s  |  %s", L.ILVL, tostring(item.level or 0),
+        tostring(item.itemSubType or item.itemType or "")))
+    side.itemMeta2:SetText(extraMeta or "")
 
     if side.icon then
         side.icon:SetTexture(item.texture)
@@ -244,8 +262,8 @@ local function FillSide(side, item, rows, total, link, extraMeta)
         local data = rows[i]
         row.label:SetText(tostring(data.label))
         row.value:SetText(Num(data.value, (data.value % 1 ~= 0) and 1 or 0))
-        row.weight:SetText("x " .. Num(data.weight, 2))
-        row.points:SetText(Num(data.points, 1))
+        row.weight:SetText("x " .. FmtWeight(data.weight))
+        row.points:SetText(FmtScore(data.points))
         if data.points >= 0 then
             row.points:SetTextColor(0.4, 1, 0.4)
         else
@@ -259,7 +277,7 @@ local function FillSide(side, item, rows, total, link, extraMeta)
         row.value:SetText(""); row.weight:SetText(""); row.points:SetText("")
     end
 
-    side.totalValue:SetText(Num(total, 1))
+    side.totalValue:SetText(FmtScore(total))
     side.totalValue:SetTextColor(1, 0.82, 0)
 end
 
@@ -354,12 +372,12 @@ function GUI:Create()
 
     -- Ergebniszeile
     local verdict = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    verdict:SetPoint("TOP", f, "TOP", 0, -436)
+    verdict:SetPoint("TOP", f, "TOP", 0, -456)
     verdict:SetWidth(FRAME_W - 60)
     f.verdict = verdict
 
     local note = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    note:SetPoint("TOP", f, "TOP", 0, -456)
+    note:SetPoint("TOP", f, "TOP", 0, -478)
     note:SetWidth(FRAME_W - 60)
     note:SetJustifyH("CENTER")
     f.note = note
@@ -569,14 +587,14 @@ function GUI:Refresh()
         local head  = result.isUpgrade and L.UPGRADE or L.NO_UPGRADE
 
         -- Bei Zweihandwaffen wird gegen die Summe beider Haende verglichen
-        local against = Num(result.targetScore, 1)
+        local against = FmtScore(result.targetScore)
         if result.combined then
             against = against .. " (" .. EG:GetSlotName(16) .. " + " .. EG:GetSlotName(17) .. ")"
         end
 
         f.verdict:SetText(sformat("%s%s%s     %s: %s%s%s     (%s %s)",
             col, head, COLOR.reset,
-            L.DIFFERENCE, col, sign .. Num(delta, 1), COLOR.reset,
+            L.DIFFERENCE, col, sign .. FmtScore(delta), COLOR.reset,
             L.GUI_COMPARED, against))
 
         local note = result.note or result.reason or ""
