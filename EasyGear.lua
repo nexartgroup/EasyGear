@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.3.0
+    EasyGear 2.3.1
     Gear-Bewertung, Upgrade-Erkennung und Vergleich fuer WoW 3.3.5a (WotLK)
 
     Kompatibilitaet:
@@ -32,7 +32,7 @@
 ------------------------------------------------------------------------------
 
 local ADDON_NAME    = "EasyGear"
-local ADDON_VERSION = "2.3.0"
+local ADDON_VERSION = "2.3.1"
 
 EasyGear = EasyGear or {}
 local EG = EasyGear
@@ -2218,7 +2218,13 @@ function EG:GetBestQuestReward()
     local numChoices = GetNumQuestChoices and GetNumQuestChoices() or 0
     if not numChoices or numChoices <= 0 then return nil end
 
-    local bestUp, bestUpScore, bestUpValue = nil, -mhuge, -1
+    --[[ Entscheidend ist der Zugewinn, nicht die absolute Wertung.
+
+         Ein Umhang mit 0.39 Punkten, der einen vorhandenen mit 0.22
+         ersetzt, bringt 0.17. Stiefel mit 0.35 Punkten in einem leeren
+         Slot bringen 0.35. Nach absoluter Wertung gewinnt der Umhang,
+         tatsaechlich sind die Stiefel die deutlich bessere Wahl.       ]]
+    local bestUp, bestUpDelta, bestUpScore, bestUpValue = nil, -mhuge, 0, -1
     local bestVendor, bestVendorValue, bestVendorScore = nil, -mhuge, 0
 
     for i = 1, numChoices do
@@ -2237,9 +2243,13 @@ function EG:GetBestQuestReward()
                 if self:IsQuestRewardUsable(i) then
                     local result = self:Compare(link)
                     if result and result.isUpgrade then
-                        if result.score > bestUpScore
-                            or (result.score == bestUpScore and totalValue > bestUpValue) then
-                            bestUpScore, bestUp, bestUpValue = result.score, i, totalValue
+                        local delta = result.delta or 0
+                        if delta > bestUpDelta
+                            or (delta == bestUpDelta and totalValue > bestUpValue) then
+                            bestUpDelta  = delta
+                            bestUpScore  = result.score
+                            bestUp       = i
+                            bestUpValue  = totalValue
                         end
                     end
                 end
@@ -2248,7 +2258,7 @@ function EG:GetBestQuestReward()
     end
 
     if bestUp then
-        return bestUp, bestUpScore, true, bestUpValue, "UPGRADE"
+        return bestUp, bestUpScore, true, bestUpValue, "UPGRADE", bestUpDelta
     end
     if bestVendor then
         return bestVendor, bestVendorScore, false, bestVendorValue, "VENDOR"
@@ -2281,7 +2291,7 @@ function EG:UpdateQuestRewards()
         end
     end
 
-    local best, score, isUpgrade, value, mode = self:GetBestQuestReward()
+    local best, score, isUpgrade, value, mode, delta = self:GetBestQuestReward()
     if not best then
         self.selectedQuestReward = nil
         return
@@ -2289,7 +2299,7 @@ function EG:UpdateQuestRewards()
 
     local link = self:GetQuestRewardLink(best)
     self.selectedQuestReward = {
-        index = best, link = link, score = score,
+        index = best, link = link, score = score, delta = delta,
         value = value, isUpgrade = isUpgrade, mode = mode,
     }
 

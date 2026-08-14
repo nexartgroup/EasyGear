@@ -233,6 +233,19 @@ auch ausgehend von einem eingebauten Profil) oder bei einem eigenen Profil
 „Speichern" zum Überschreiben. Eigene Profile sind mit `*` markiert, gelten
 accountweit und stehen sofort in der Auswahl.
 
+### Questbelohnungen
+
+Gewertet wird nach dem **Zugewinn**, nicht nach der absoluten Wertung. Der
+Unterschied ist erheblich, wenn ein Slot noch leer ist:
+
+```
+Mondweidenfellumhang    Wertung 0.51   angelegt 0.30   Zugewinn +0.21
+Mondweidenlederstiefel  Wertung 0.61   angelegt 0.00   Zugewinn +0.61   <- gewählt
+```
+
+Ist keine Belohnung ein Upgrade, entscheidet der Gesamtverkaufswert
+(Stückpreis × Anzahl).
+
 ### Waffenhand und Schildhand
 
 Solange eine Zweihandwaffe geführt wird, ist die Schildhand nicht frei — sie wird
@@ -269,6 +282,8 @@ dem Ablegen des Zweihänders.
 * **Rüstungsklassen ohne Stufenprüfung.** Platte ab 40 (Krieger/Paladin), Kette ab 40 (Jäger/Schamane) — vorher galt alles ab Stufe 1 als tragbar.
 * **Schamane konnte keine Schilde tragen**, Reliktslots (Buchband, Götze, Totem, Sigelrune) fehlten ganz.
 * **Einhandwaffen wurden allen Klassen auf beide Hände gerechnet** — auch Magiern. Beidhändigkeit wird jetzt geprüft.
+* **Questbelohnungen wurden nach absoluter Wertung gewählt** statt nach Zugewinn. Ein Item, das einen leeren Slot füllt, verlor damit gegen ein minimal höher bewertetes, das bereits Vorhandenes ersetzt.
+* **Zauber- und Heilprofile hatten gar kein Rüstungsgewicht.** Auf niedrigen Stufen, wo Items oft nur Rüstung und sonst nichts tragen, blieb dadurch die Gegenstandsstufe als einziges Unterscheidungsmerkmal.
 * **`Äxte` statt `Einhandäxte`** und weitere ungenaue deutsche Untertypnamen; jetzt Token-basiert mit Aliaslisten für deDE und enUS.
 * **Fest verdrahtete deutsche Slotnamen** — jetzt über die lokalisierten Blizzard-Globals (`HEADSLOT`, `FINGER0SLOT`, …).
 * **`✓` und `✗`** wurden benutzt; diese Zeichen fehlen in `FRIZQT__.TTF` und erscheinen als Kästchen. Ersetzt.

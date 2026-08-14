@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.3.0 - Profildatenbank (WotLK 3.3.5a)
+    EasyGear 2.3.1 - Profildatenbank (WotLK 3.3.5a)
 
     Ein Eintrag pro sinnvollem Spielstil, nicht pro Talentbaum: wo sich die
     Gewichtung innerhalb eines Baums real unterscheidet (Blut-Tank gegen
@@ -92,7 +92,7 @@ EG.SPECS.PALADIN = {
         hd = "Zaubermacht und Tempo, Manaregeneration ueber Intelligenz.",
         he = "Spell power and haste, mana from intellect.",
         w = { SP = 1.00, INT = 0.75, SPI = 0.35, CRIT = 0.60, HASTE = 0.85,
-              MP5 = 0.90, STA = 0.15, DPS = 0.3 },
+              MP5 = 0.90, STA = 0.15, ARMOR = 0.01, DPS = 0.3 },
     },
     {
         id = "PALADIN_PROT", tab = 2, auto = true, role = "TANK",
@@ -123,7 +123,7 @@ EG.SPECS.HUNTER = {
         hd = "Angriffskraft skaliert zusaetzlich ueber das Tier.",
         he = "Attack power also scales through the pet.",
         w = { AGI = 1.00, RAP = 0.50, AP = 0.40, HIT = 1.20, CRIT = 0.70,
-              HASTE = 0.65, ARP = 0.60, INT = 0.12, STA = 0.10, DPS = 5.0 },
+              HASTE = 0.65, ARP = 0.60, INT = 0.12, STA = 0.10, ARMOR = 0.01, DPS = 5.0 },
     },
     {
         id = "HUNTER_MM", tab = 2, auto = true, role = "RANGED",
@@ -131,7 +131,7 @@ EG.SPECS.HUNTER = {
         hd = "Kritische Trefferwertung und Ruestung ignorieren im Vordergrund.",
         he = "Crit rating and armor penetration lead.",
         w = { AGI = 1.00, RAP = 0.50, HIT = 1.20, CRIT = 0.80, ARP = 0.90,
-              HASTE = 0.60, INT = 0.12, STA = 0.10, DPS = 6.0 },
+              HASTE = 0.60, INT = 0.12, STA = 0.10, ARMOR = 0.01, DPS = 6.0 },
     },
     {
         id = "HUNTER_SV", tab = 3, auto = true, role = "RANGED",
@@ -139,7 +139,7 @@ EG.SPECS.HUNTER = {
         hd = "Hoher Trefferbedarf, Tempo vor Ruestung ignorieren.",
         he = "High hit requirement, haste over armor penetration.",
         w = { AGI = 1.00, RAP = 0.50, HIT = 1.25, CRIT = 0.75, HASTE = 0.70,
-              ARP = 0.55, INT = 0.12, STA = 0.10, DPS = 5.0 },
+              ARP = 0.55, INT = 0.12, STA = 0.10, ARMOR = 0.01, DPS = 5.0 },
     },
 }
 
@@ -151,7 +151,7 @@ EG.SPECS.ROGUE = {
         hd = "Dolche, sehr hoher Trefferbedarf durch Verstuemmeln.",
         he = "Daggers, very high hit requirement from Mutilate.",
         w = { AGI = 1.00, AP = 0.50, HIT = 1.30, EXP = 1.00, CRIT = 0.75,
-              HASTE = 0.70, ARP = 0.70, STR = 0.35, STA = 0.10, DPS = 5.0 },
+              HASTE = 0.70, ARP = 0.70, STR = 0.35, STA = 0.10, ARMOR = 0.02, DPS = 5.0 },
     },
     {
         id = "ROGUE_COMBAT", tab = 2, auto = true, role = "MELEE",
@@ -159,7 +159,7 @@ EG.SPECS.ROGUE = {
         hd = "Ruestung ignorieren ist hier das staerkste Sekundaerattribut.",
         he = "Armor penetration is the strongest secondary here.",
         w = { AGI = 1.00, AP = 0.50, HIT = 1.20, EXP = 1.10, CRIT = 0.70,
-              HASTE = 0.80, ARP = 1.10, STR = 0.35, STA = 0.10, DPS = 7.0 },
+              HASTE = 0.80, ARP = 1.10, STR = 0.35, STA = 0.10, ARMOR = 0.02, DPS = 7.0 },
     },
     {
         id = "ROGUE_SUB", tab = 3, auto = true, role = "MELEE",
@@ -167,7 +167,7 @@ EG.SPECS.ROGUE = {
         hd = "Ausgewogen zwischen kritischer Trefferwertung und Waffenschaden.",
         he = "Balanced between crit rating and weapon damage.",
         w = { AGI = 1.00, AP = 0.50, HIT = 1.25, EXP = 1.05, CRIT = 0.80,
-              HASTE = 0.65, ARP = 0.85, STR = 0.35, STA = 0.10, DPS = 6.0 },
+              HASTE = 0.65, ARP = 0.85, STR = 0.35, STA = 0.10, ARMOR = 0.02, DPS = 6.0 },
     },
 }
 
@@ -179,7 +179,7 @@ EG.SPECS.PRIEST = {
         hd = "Schilde skalieren mit Zaubermacht, Willenskraft weniger wichtig.",
         he = "Shields scale with spell power, spirit matters less.",
         w = { SP = 1.00, INT = 0.70, SPI = 0.30, CRIT = 0.70, HASTE = 0.75,
-              MP5 = 0.85, STA = 0.15, DPS = 0.3 },
+              MP5 = 0.85, STA = 0.15, ARMOR = 0.01, DPS = 0.3 },
     },
     {
         id = "PRIEST_HOLY", tab = 2, auto = true, role = "HEAL",
@@ -187,7 +187,7 @@ EG.SPECS.PRIEST = {
         hd = "Willenskraft und Tempo, hoher Manadurchsatz.",
         he = "Spirit and haste, high mana throughput.",
         w = { SP = 1.00, INT = 0.65, SPI = 0.55, CRIT = 0.60, HASTE = 0.80,
-              MP5 = 0.90, STA = 0.15, DPS = 0.3 },
+              MP5 = 0.90, STA = 0.15, ARMOR = 0.01, DPS = 0.3 },
     },
     {
         id = "PRIEST_SHADOW", tab = 3, auto = true, role = "CASTER",
@@ -195,7 +195,7 @@ EG.SPECS.PRIEST = {
         hd = "Willenskraft zaehlt mit, da sie ueber Talente Zaubermacht gibt.",
         he = "Spirit counts, since talents convert it to spell power.",
         w = { SP = 1.00, HIT = 1.20, HASTE = 0.95, CRIT = 0.65, INT = 0.35,
-              SPI = 0.55, STA = 0.10, SPEN = 0.05, DPS = 0.5 },
+              SPI = 0.55, STA = 0.10, SPEN = 0.05, ARMOR = 0.01, DPS = 0.5 },
     },
 }
 
@@ -261,7 +261,7 @@ EG.SPECS.SHAMAN = {
         hd = "Zaubertrefferwertung bis zur Obergrenze, danach Tempo.",
         he = "Spell hit to cap, then haste.",
         w = { SP = 1.00, INT = 0.45, HIT = 1.30, HASTE = 0.90, CRIT = 0.80,
-              MP5 = 0.15, STA = 0.10, DPS = 0.5 },
+              MP5 = 0.15, STA = 0.10, ARMOR = 0.01, DPS = 0.5 },
     },
     {
         id = "SHAMAN_ENH", tab = 2, auto = true, role = "MELEE",
@@ -270,7 +270,7 @@ EG.SPECS.SHAMAN = {
         he = "Needs both melee and spell hit rating.",
         w = { AGI = 1.00, AP = 0.50, STR = 0.55, HIT = 1.35, EXP = 1.00,
               CRIT = 0.70, HASTE = 0.85, ARP = 0.60, INT = 0.15, SP = 0.35,
-              STA = 0.10, DPS = 6.0 },
+              STA = 0.10, ARMOR = 0.02, DPS = 6.0 },
     },
     {
         id = "SHAMAN_RESTO", tab = 3, auto = true, role = "HEAL",
@@ -278,7 +278,7 @@ EG.SPECS.SHAMAN = {
         hd = "Tempo ist das staerkste Sekundaerattribut.",
         he = "Haste is the strongest secondary.",
         w = { SP = 1.00, INT = 0.70, SPI = 0.45, HASTE = 0.95, CRIT = 0.55,
-              MP5 = 0.85, STA = 0.15, DPS = 0.3 },
+              MP5 = 0.85, STA = 0.15, ARMOR = 0.01, DPS = 0.3 },
     },
 }
 
@@ -290,7 +290,7 @@ EG.SPECS.MAGE = {
         hd = "Intelligenz zaehlt hier mehr als in den anderen Baeumen.",
         he = "Intellect counts more here than in the other trees.",
         w = { SP = 1.00, INT = 0.55, HIT = 1.30, HASTE = 0.90, CRIT = 0.70,
-              SPI = 0.10, STA = 0.10, DPS = 0.5 },
+              SPI = 0.10, STA = 0.10, ARMOR = 0.01, DPS = 0.5 },
     },
     {
         id = "MAGE_FIRE", tab = 2, auto = true, role = "CASTER",
@@ -298,7 +298,7 @@ EG.SPECS.MAGE = {
         hd = "Kritische Trefferwertung im Vordergrund.",
         he = "Crit rating leads.",
         w = { SP = 1.00, INT = 0.40, HIT = 1.30, CRIT = 0.85, HASTE = 0.80,
-              SPI = 0.10, STA = 0.10, DPS = 0.5 },
+              SPI = 0.10, STA = 0.10, ARMOR = 0.01, DPS = 0.5 },
     },
     {
         id = "MAGE_FROST", tab = 3, auto = true, role = "CASTER",
@@ -306,7 +306,7 @@ EG.SPECS.MAGE = {
         hd = "Ausgewogen zwischen kritischer Trefferwertung und Tempo.",
         he = "Balanced between crit rating and haste.",
         w = { SP = 1.00, INT = 0.45, HIT = 1.30, CRIT = 0.80, HASTE = 0.85,
-              SPI = 0.10, STA = 0.10, DPS = 0.5 },
+              SPI = 0.10, STA = 0.10, ARMOR = 0.01, DPS = 0.5 },
     },
 }
 
@@ -318,7 +318,7 @@ EG.SPECS.WARLOCK = {
         hd = "Tempo verkuerzt die Zauberzeiten der Flueche spuerbar.",
         he = "Haste shortens the curse rotation noticeably.",
         w = { SP = 1.00, HIT = 1.30, HASTE = 0.95, CRIT = 0.60, INT = 0.35,
-              SPI = 0.25, STA = 0.10, DPS = 0.5 },
+              SPI = 0.25, STA = 0.10, ARMOR = 0.01, DPS = 0.5 },
     },
     {
         id = "WARLOCK_DEMO", tab = 2, auto = true, role = "CASTER",
@@ -326,7 +326,7 @@ EG.SPECS.WARLOCK = {
         hd = "Ausgewogen, profitiert zusaetzlich ueber den Daemon.",
         he = "Balanced, also scales through the demon.",
         w = { SP = 1.00, HIT = 1.25, CRIT = 0.75, HASTE = 0.85, INT = 0.35,
-              SPI = 0.20, STA = 0.10, DPS = 0.5 },
+              SPI = 0.20, STA = 0.10, ARMOR = 0.01, DPS = 0.5 },
     },
     {
         id = "WARLOCK_DESTRO", tab = 3, auto = true, role = "CASTER",
@@ -334,7 +334,7 @@ EG.SPECS.WARLOCK = {
         hd = "Kritische Trefferwertung im Vordergrund.",
         he = "Crit rating leads.",
         w = { SP = 1.00, HIT = 1.25, CRIT = 0.85, HASTE = 0.80, INT = 0.35,
-              SPI = 0.15, STA = 0.10, DPS = 0.5 },
+              SPI = 0.15, STA = 0.10, ARMOR = 0.01, DPS = 0.5 },
     },
 }
 
@@ -346,7 +346,7 @@ EG.SPECS.DRUID = {
         hd = "Willenskraft gibt ueber Talente Zaubertrefferwertung.",
         he = "Spirit converts to spell hit through talents.",
         w = { SP = 1.00, HIT = 1.25, HASTE = 0.90, CRIT = 0.70, INT = 0.40,
-              SPI = 0.55, STA = 0.10, DPS = 0.5 },
+              SPI = 0.55, STA = 0.10, ARMOR = 0.01, DPS = 0.5 },
     },
     {
         id = "DRUID_CAT", tab = 2, auto = true, role = "MELEE",
@@ -354,7 +354,7 @@ EG.SPECS.DRUID = {
         hd = "Ruestung ignorieren ist hier besonders stark.",
         he = "Armor penetration is especially strong here.",
         w = { AGI = 1.00, AP = 0.50, STR = 0.45, HIT = 1.15, EXP = 1.00,
-              CRIT = 0.75, ARP = 1.00, HASTE = 0.55, STA = 0.10, DPS = 5.0 },
+              CRIT = 0.75, ARP = 1.00, HASTE = 0.55, STA = 0.10, ARMOR = 0.02, DPS = 5.0 },
     },
     {
         id = "DRUID_BEAR", tab = 2, role = "TANK",
@@ -371,7 +371,7 @@ EG.SPECS.DRUID = {
         hd = "Tempo und Willenskraft fuer den Verjuengungs-Durchsatz.",
         he = "Haste and spirit for rejuvenation throughput.",
         w = { SP = 1.00, INT = 0.65, SPI = 0.50, HASTE = 0.90, CRIT = 0.55,
-              MP5 = 0.85, STA = 0.15, DPS = 0.3 },
+              MP5 = 0.85, STA = 0.15, ARMOR = 0.01, DPS = 0.3 },
     },
 }
 
