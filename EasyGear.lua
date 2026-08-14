@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.0.3
+    EasyGear 2.2.0
     Gear-Bewertung, Upgrade-Erkennung und Vergleich fuer WoW 3.3.5a (WotLK)
 
     Kompatibilitaet:
@@ -32,7 +32,7 @@
 ------------------------------------------------------------------------------
 
 local ADDON_NAME    = "EasyGear"
-local ADDON_VERSION = "2.0.3"
+local ADDON_VERSION = "2.2.0"
 
 EasyGear = EasyGear or {}
 local EG = EasyGear
@@ -73,11 +73,14 @@ local DEFAULTS = {
     egupConfirm      = true,
     egupDelay        = 0.35,
     debug            = false,
+    custom           = {},      -- eigene Profile (accountweit)
 }
 
 local CHAR_DEFAULTS = {
-    role    = "AUTO",           -- AUTO | TANK | MELEE | RANGED | CASTER | HEAL
-    weights = nil,              -- optionale eigene Gewichte
+    profile = "AUTO",           -- Profil-ID oder "AUTO" (Talentbaum-Erkennung)
+    pvp     = false,            -- PvP-Aufschlag auf Abhaertung und Ausdauer
+    role    = "AUTO",           -- veraltet, nur noch fuer /eg role
+    weights = nil,              -- veraltete Einzelgewichte
     gui     = { point = "CENTER", x = 0, y = 0, scale = 1.0 },
     egup    = nil,              -- letzte EGUP-Sitzung (relog-fest)
 }
@@ -156,6 +159,48 @@ do
         ROLE_HEAL         = "Healer",
         -- Einstellungen
         SET_ROLE          = "Role set to: %s",
+        P_CANDIDATE       = "Comparison profile",
+        P_ACTIVEPROF      = "Active profile",
+        P_CLASS           = "Class",
+        P_MYCLASS         = "My class",
+        P_GEAR            = "Your equipped gear",
+        P_GEAR_SCORE      = "Gear score",
+        P_ITEM_LINE       = "Item from the comparison window",
+        P_SAVE_NEW        = "Save as new profile",
+        P_OVERWRITE       = "Save",
+        P_IS_ACTIVE       = "This is already the active profile.",
+        P_EDIT_HINT       = "Edit mode: change the weights on the left, then save.",
+        P_BETTER          = "Your gear collects more points under this weighting.",
+        P_WORSE           = "Your gear collects fewer points under this weighting.",
+        P_SAME            = "Same score under both weightings.",
+        P_CAVEAT          = "Totals of different profiles are only roughly comparable - what matters is which attributes carry the points.",
+        P_NOGEAR          = "No gear equipped.",
+        P_ITEMS           = "%d items",
+        SET_PROFILE       = "Active profile: %s",
+        SET_PVP           = "PvP mode: %s",
+        PROFILE_LIST      = "Available profiles",
+        PROFILE_AUTO_HINT = "detect from talent tree",
+        PROFILE_CMD_HINT  = "* = own profile   |   /eg profile <id>   |   /egprofile for the window",
+        PROFILE_UNKNOWN   = "Unknown profile: %s",
+        CMD_EGPROFILE     = "- profile overview and comparison",
+        P_TITLE           = "EasyGear - Profiles",
+        P_COMPARE_A       = "Profile A",
+        P_COMPARE_B       = "Profile B",
+        P_HINT            = "Left click = A   |   right click = B   |   mouse wheel scrolls",
+        P_ACTIVATE        = "Activate A",
+        P_NEW             = "Copy A",
+        P_EDIT            = "Edit",
+        P_SAVE            = "Save",
+        P_DELETE          = "Delete",
+        P_PVP             = "PvP mode (resilience and stamina)",
+        P_ACTIVE          = "active",
+        P_DIFF            = "Diff",
+        P_NAME            = "Name",
+        P_NEW_PROMPT      = "Name for the new profile:",
+        P_DELETE_CONFIRM  = "Really delete the profile %s?",
+        P_ONLY_CUSTOM     = "Only your own profiles can be edited - use Copy A first.",
+        P_SCORE_HINT      = "Score of the item from the comparison window",
+        P_NO_ITEM         = "no item loaded",
         SET_ILVL          = "Item level weight: %s",
         SET_ON            = "enabled",
         SET_OFF           = "disabled",
@@ -245,6 +290,48 @@ do
             ROLE_CASTER       = "Zauber-DD",
             ROLE_HEAL         = "Heiler",
             SET_ROLE          = "Rolle gesetzt: %s",
+            P_CANDIDATE       = "Vergleichsprofil",
+            P_ACTIVEPROF      = "Aktives Profil",
+            P_CLASS           = "Klasse",
+            P_MYCLASS         = "Meine Klasse",
+            P_GEAR            = "Deine angelegte Ausr\195\188stung",
+            P_GEAR_SCORE      = "Ausr\195\188stungswertung",
+            P_ITEM_LINE       = "Item aus dem Vergleichsfenster",
+            P_SAVE_NEW        = "Als neues Profil speichern",
+            P_OVERWRITE       = "Speichern",
+            P_IS_ACTIVE       = "Das ist bereits das aktive Profil.",
+            P_EDIT_HINT       = "Bearbeitungsmodus: links die Gewichte \195\164ndern, dann speichern.",
+            P_BETTER          = "Deine Ausr\195\188stung sammelt unter dieser Gewichtung mehr Punkte.",
+            P_WORSE           = "Deine Ausr\195\188stung sammelt unter dieser Gewichtung weniger Punkte.",
+            P_SAME            = "Gleiche Wertung unter beiden Gewichtungen.",
+            P_CAVEAT          = "Gesamtsummen verschiedener Profile sind nur grob vergleichbar - aussagekr\195\164ftig ist, welche Attribute die Punkte tragen.",
+            P_NOGEAR          = "Keine Ausr\195\188stung angelegt.",
+            P_ITEMS           = "%d Teile",
+            SET_PROFILE       = "Aktives Profil: %s",
+            SET_PVP           = "PvP-Modus: %s",
+            PROFILE_LIST      = "Verf\195\188gbare Profile",
+            PROFILE_AUTO_HINT = "\195\188ber Talentbaum erkennen",
+            PROFILE_CMD_HINT  = "* = eigenes Profil   |   /eg profile <id>   |   /egprofile \195\182ffnet das Fenster",
+            PROFILE_UNKNOWN   = "Unbekanntes Profil: %s",
+            CMD_EGPROFILE     = "- Profil\195\188bersicht und Vergleich",
+            P_TITLE           = "EasyGear - Profile",
+            P_COMPARE_A       = "Profil A",
+            P_COMPARE_B       = "Profil B",
+            P_HINT            = "Linksklick = A   |   Rechtsklick = B   |   Mausrad scrollt",
+            P_ACTIVATE        = "A aktivieren",
+            P_NEW             = "A kopieren",
+            P_EDIT            = "Bearbeiten",
+            P_SAVE            = "Speichern",
+            P_DELETE          = "L\195\182schen",
+            P_PVP             = "PvP-Modus (Abh\195\164rtung und Ausdauer)",
+            P_ACTIVE          = "aktiv",
+            P_DIFF            = "Diff",
+            P_NAME            = "Name",
+            P_NEW_PROMPT      = "Name f\195\188r das neue Profil:",
+            P_DELETE_CONFIRM  = "Profil %s wirklich l\195\182schen?",
+            P_ONLY_CUSTOM     = "Nur eigene Profile lassen sich bearbeiten - zuerst A kopieren.",
+            P_SCORE_HINT      = "Wertung des Items aus dem Vergleichsfenster",
+            P_NO_ITEM         = "kein Item geladen",
             SET_ILVL          = "Gewicht Gegenstandsstufe: %s",
             SET_ON            = "aktiviert",
             SET_OFF           = "deaktiviert",
@@ -526,102 +613,27 @@ local STAT_ORDER = {
 }
 EG.STAT_ORDER = STAT_ORDER
 
--- Kurzform-Tabelle in echte Schluessel uebersetzen
+--[[ Kurzform-Tabelle in echte Schluessel uebersetzen.
+     "STR" -> ITEM_MOD_STRENGTH_SHORT, "DPS" -> __DPS usw.
+     Wird auch von EasyGearSpecs.lua benutzt.                              ]]
+local SHORTHAND_EXTRA = {
+    DPS    = "__DPS",
+    SOCKET = "__SOCKET",
+}
+
 local function mk(t)
     local out = {}
-    for k, v in pairs(t) do
-        out[S[k] or k] = v
+    for k, v in pairs(t or {}) do
+        out[S[k] or SHORTHAND_EXTRA[k] or k] = v
     end
     return out
 end
 
---[[ Rollenprofile
-     Die Gewichte sind an die gaengigen WotLK-Statwerte angelehnt und auf
-     das Primaerattribut (1.0) normiert. Sie lassen sich pro Charakter
-     ueberschreiben (EasyGearCharDB.weights).                              ]]
-local PROFILES = {
-    MELEE_STR = mk({
-        STR = 1.00, AGI = 0.35, STA = 0.15, AP = 0.50,
-        HIT = 1.00, EXP = 0.90, CRIT = 0.80, HASTE = 0.70, ARP = 0.80,
-        ARMOR = 0.02, __DPS = 6.0,
-    }),
-    MELEE_AGI = mk({
-        AGI = 1.00, STR = 0.45, STA = 0.15, AP = 0.50,
-        HIT = 1.00, EXP = 0.90, CRIT = 0.75, HASTE = 0.70, ARP = 0.80,
-        ARMOR = 0.02, __DPS = 6.0,
-    }),
-    RANGED = mk({
-        AGI = 1.00, STA = 0.15, RAP = 0.50, AP = 0.40, INT = 0.15,
-        HIT = 1.00, CRIT = 0.75, HASTE = 0.60, ARP = 0.70,
-        ARMOR = 0.01, __DPS = 4.0,
-    }),
-    CASTER = mk({
-        SP = 1.00, INT = 0.60, STA = 0.15, SPI = 0.20,
-        HIT = 1.10, HASTE = 0.90, CRIT = 0.70, SPEN = 0.10,
-        MP5 = 0.30, ARMOR = 0.01, __DPS = 0.5,
-    }),
-    HEAL = mk({
-        SP = 1.00, INT = 0.70, SPI = 0.60, STA = 0.15,
-        HASTE = 0.80, CRIT = 0.50, MP5 = 1.00,
-        ARMOR = 0.01, __DPS = 0.5,
-    }),
-    TANK = mk({
-        STA = 1.00, DEF = 1.20, DODGE = 0.90, PARRY = 0.80,
-        BLOCKV = 0.40, BLOCKR = 0.30, ARMOR = 0.05,
-        STR = 0.50, AGI = 0.55, AP = 0.15,
-        HIT = 0.40, EXP = 0.60, CRIT = 0.20, RESIL = 0.10,
-        __DPS = 2.0,
-    }),
-    -- Fallback fuer sehr niedrige Stufen ohne Talente
-    -- Fallback fuer sehr niedrige Stufen ohne Talente.
-    -- Ruestung ist hier bewusst hoeher gewichtet: unterhalb von Stufe 15
-    -- unterscheiden sich Items fast nur ueber Ruestung und ein bis zwei
-    -- Attribute, und die Ruestungsklasse (Stoff/Leder/Kette) ist der
-    -- groesste einzelne Unterschied.
-    LOWLEVEL = mk({
-        STR = 0.60, AGI = 0.60, INT = 0.60, SPI = 0.30, STA = 0.50,
-        AP = 0.30, SP = 0.60, CRIT = 0.40, HIT = 0.40, HASTE = 0.30,
-        ARMOR = 0.06, __DPS = 4.0,
-    }),
-}
-EG.PROFILES = PROFILES
+function EG:MakeWeights(t) return mk(t) end
 
---[[ Zuordnung Klasse -> Talentbaum-Index -> Profil.
-     Talentbaum-Reihenfolge in 3.3.5a:
-       WARRIOR      1 Waffen      2 Furor        3 Schutz
-       PALADIN      1 Heilig      2 Schutz       3 Vergeltung
-       HUNTER       1 Tierherr.   2 Treffsich.   3 Ueberleben
-       ROGUE        1 Meucheln    2 Kampf        3 Taeuschung
-       PRIEST       1 Disziplin   2 Heilig       3 Schatten
-       DEATHKNIGHT  1 Blut        2 Frost        3 Unheilig
-       SHAMAN       1 Elementar   2 Verstaerk.   3 Wiederherst.
-       MAGE         1 Arkan       2 Feuer        3 Frost
-       WARLOCK      1 Gebrechen   2 Daemonologie 3 Zerstoerung
-       DRUID        1 Gleichgew.  2 Wildheit     3 Wiederherst.        ]]
-local CLASS_SPEC = {
-    WARRIOR     = { "MELEE_STR", "MELEE_STR", "TANK"      },
-    PALADIN     = { "HEAL",      "TANK",      "MELEE_STR" },
-    HUNTER      = { "RANGED",    "RANGED",    "RANGED"    },
-    ROGUE       = { "MELEE_AGI", "MELEE_AGI", "MELEE_AGI" },
-    PRIEST      = { "HEAL",      "HEAL",      "CASTER"    },
-    DEATHKNIGHT = { "TANK",      "MELEE_STR", "MELEE_STR" },
-    SHAMAN      = { "CASTER",    "MELEE_AGI", "HEAL"      },
-    MAGE        = { "CASTER",    "CASTER",    "CASTER"    },
-    WARLOCK     = { "CASTER",    "CASTER",    "CASTER"    },
-    DRUID       = { "CASTER",    "MELEE_AGI", "HEAL"      },
-}
-
-local CLASS_DEFAULT_PROFILE = {
-    WARRIOR = "MELEE_STR", PALADIN = "MELEE_STR", HUNTER = "RANGED",
-    ROGUE   = "MELEE_AGI", PRIEST  = "CASTER",    DEATHKNIGHT = "MELEE_STR",
-    SHAMAN  = "MELEE_AGI", MAGE    = "CASTER",    WARLOCK = "CASTER",
-    DRUID   = "MELEE_AGI",
-}
-
-local ROLE_TO_PROFILE = {
-    TANK = "TANK", MELEE = "MELEE_AGI", RANGED = "RANGED",
-    CASTER = "CASTER", HEAL = "HEAL",
-}
+--[[ Die eigentlichen Gewichtungsprofile stehen in EasyGearSpecs.lua
+     (EG.SPECS je Klasse, EG.SPECS_ANY klassenunabhaengig). Eigene Profile
+     liegen in EasyGearDB.custom.                                          ]]
 
 ------------------------------------------------------------------------------
 -- 06  Spec-/Rollen-Erkennung
@@ -639,6 +651,166 @@ function EG:InvalidateProfile()
     self.epoch = (self.epoch or 0) + 1
 end
 
+--[[--------------------------------------------------------------------
+     Profilverwaltung
+
+     Alle Profile liegen in EG.SPECS (klassenweise) und EG.SPECS_ANY
+     (klassenunabhaengig); eigene Profile kommen aus EasyGearDB.custom.
+     Ausgewaehlt wird ueber die ID in EasyGearCharDB.profile, "AUTO"
+     bedeutet Erkennung ueber den Talentbaum.
+----------------------------------------------------------------------]]
+
+-- PvP-Aufschlag: Abhaertung und Ausdauer werden aufgewertet
+local function ApplyPvP(weights)
+    local out = {}
+    for k, v in pairs(weights) do out[k] = v end
+    local resil = out[S.RESIL] or 0
+    out[S.RESIL] = mmax(resil, 1.00)
+    out[S.STA]   = mmax((out[S.STA] or 0) * 2.5, 0.45)
+    return out
+end
+
+function EG:GetPlayerClass()
+    local _, class = UnitClass("player")
+    return class or "WARRIOR"
+end
+
+function EG:GetProfileName(spec)
+    if not spec then return "?" end
+    if spec.custom then return spec.name or spec.id end
+    if GetLocale() == "deDE" then return spec.de or spec.en or spec.id end
+    return spec.en or spec.de or spec.id
+end
+
+function EG:GetProfileDesc(spec)
+    if not spec then return "" end
+    if spec.custom then return spec.desc or "" end
+    if GetLocale() == "deDE" then return spec.hd or spec.he or "" end
+    return spec.he or spec.hd or ""
+end
+
+--[[ Alle fuer diese Klasse waehlbaren Profile, in fester Reihenfolge:
+     Klassenprofile, eigene Profile, klassenunabhaengige Profile.        ]]
+function EG:GetAvailableProfiles(class)
+    class = class or self:GetPlayerClass()
+    local list = {}
+
+    if self.SPECS and self.SPECS[class] then
+        for _, spec in ipairs(self.SPECS[class]) do list[#list + 1] = spec end
+    end
+
+    local custom = self.db and self.db.custom
+    if custom then
+        local ids = {}
+        for id in pairs(custom) do ids[#ids + 1] = id end
+        tsort(ids)
+        for _, id in ipairs(ids) do
+            local c = custom[id]
+            if c and (not c.class or c.class == "ANY" or c.class == class) then
+                list[#list + 1] = c
+            end
+        end
+    end
+
+    if self.SPECS_ANY then
+        for _, spec in ipairs(self.SPECS_ANY) do list[#list + 1] = spec end
+    end
+
+    return list
+end
+
+-- Wie GetAvailableProfiles, aber fuer eine frei gewaehlte Klasse
+function EG:GetProfilesForClass(class)
+    return self:GetAvailableProfiles(class)
+end
+
+function EG:GetProfileByID(id)
+    if not id or id == "AUTO" then return nil end
+
+    if self.db and self.db.custom and self.db.custom[id] then
+        return self.db.custom[id]
+    end
+    if self.SPECS then
+        for _, list in pairs(self.SPECS) do
+            for _, spec in ipairs(list) do
+                if spec.id == id then return spec end
+            end
+        end
+    end
+    if self.SPECS_ANY then
+        for _, spec in ipairs(self.SPECS_ANY) do
+            if spec.id == id then return spec end
+        end
+    end
+    return nil
+end
+
+-- Talentbaum mit den meisten Punkten -> passendes Profil
+function EG:DetectProfile(class)
+    class = class or self:GetPlayerClass()
+    local list = self.SPECS and self.SPECS[class]
+
+    local bestTab, bestPoints = nil, 0
+    local numTabs = (GetNumTalentTabs and GetNumTalentTabs()) or 3
+    for i = 1, (numTabs or 3) do
+        local _, _, points = GetTalentTabInfo(i)
+        if points and points > bestPoints then
+            bestPoints, bestTab = points, i
+        end
+    end
+
+    -- Zu wenige Punkte gesetzt: neutrales Levelprofil
+    if not list or not bestTab or bestPoints < 5 then
+        return self:GetProfileByID("LEVELING"), true
+    end
+
+    local fallback
+    for _, spec in ipairs(list) do
+        if spec.tab == bestTab then
+            if spec.auto then return spec, true end
+            fallback = fallback or spec
+        end
+    end
+    return fallback or list[1], true
+end
+
+function EG:GetActiveProfileID()
+    return (self.charDB and self.charDB.profile) or "AUTO"
+end
+
+function EG:SetActiveProfile(id)
+    if not self.charDB then return end
+    if id ~= "AUTO" and not self:GetProfileByID(id) then return false end
+    self.charDB.profile = id
+    self:InvalidateProfile()
+    self:WipeItemCache()
+    self:RefreshAllBags()
+    if self.GUI then self.GUI:Refresh() end
+    if self.ProfileGUI then self.ProfileGUI:Refresh() end
+    return true
+end
+
+function EG:IsPvPMode()
+    return (self.charDB and self.charDB.pvp) and true or false
+end
+
+function EG:SetPvPMode(on)
+    if not self.charDB then return end
+    self.charDB.pvp = on and true or false
+    self:InvalidateProfile()
+    self:RefreshAllBags()
+    if self.GUI then self.GUI:Refresh() end
+    if self.ProfileGUI then self.ProfileGUI:Refresh() end
+end
+
+-- Endgueltige Gewichte eines Profils (inklusive PvP-Aufschlag)
+function EG:GetWeightsFor(spec, withPvP)
+    if not spec then return {} end
+    local w = spec.weights or {}
+    if withPvP then w = ApplyPvP(w) end
+    return w
+end
+
 --[[ Ermittelt das aktive Gewichtungsprofil.
      Rueckgabe: weights (Tabelle), name (String), signature (String)       ]]
 function EG:GetProfile()
@@ -646,60 +818,112 @@ function EG:GetProfile()
                                      self.profileCache.name,
                                      self.profileCache.sig end
 
-    local _, class = UnitClass("player")
-    class = class or "WARRIOR"
+    local class = self:GetPlayerClass()
+    local id    = self:GetActiveProfileID()
 
-    local profileName, label
-
-    -- 1) Manuelle Rolle hat Vorrang
-    local role = self.charDB and self.charDB.role or "AUTO"
-    if role ~= "AUTO" and ROLE_TO_PROFILE[role] then
-        profileName = ROLE_TO_PROFILE[role]
-        -- Nahkampf-Rolle: Staerkeklassen bekommen das STR-Profil
-        if role == "MELEE" and (class == "WARRIOR" or class == "PALADIN"
-                                or class == "DEATHKNIGHT") then
-            profileName = "MELEE_STR"
-        end
-        label = L["ROLE_" .. role] or role
+    local spec, auto
+    if id == "AUTO" then
+        spec, auto = self:DetectProfile(class)
     else
-        -- 2) Talentbaum mit den meisten Punkten
-        local bestTab, bestPoints, bestName = nil, 0, nil
-        local numTabs = GetNumTalentTabs and GetNumTalentTabs() or 3
-        for i = 1, (numTabs or 3) do
-            local name, _, points = GetTalentTabInfo(i)
-            if points and points > bestPoints then
-                bestPoints, bestTab, bestName = points, i, name
-            end
-        end
-        if bestTab and bestPoints >= 5 and CLASS_SPEC[class] then
-            profileName = CLASS_SPEC[class][bestTab]
-            label = bestName or profileName
-        elseif UnitLevel("player") < 15 then
-            profileName = "LOWLEVEL"
-            label = L.ROLE_AUTO
-        else
-            profileName = CLASS_DEFAULT_PROFILE[class] or "MELEE_STR"
-            label = L.ROLE_AUTO
-        end
+        spec = self:GetProfileByID(id)
+        if not spec then spec, auto = self:DetectProfile(class) end
+    end
+    if not spec then
+        spec = { id = "LEVELING", weights = {}, de = "Levelphase", en = "Leveling" }
     end
 
-    local weights = PROFILES[profileName] or PROFILES.LOWLEVEL
+    local pvp     = self:IsPvPMode()
+    local weights = self:GetWeightsFor(spec, pvp)
 
-    -- 3) Eigene Gewichte des Charakters ueberlagern das Profil
-    if self.charDB and self.charDB.weights then
-        local merged = {}
-        for k, v in pairs(weights) do merged[k] = v end
-        for k, v in pairs(self.charDB.weights) do merged[k] = v end
-        weights = merged
-    end
+    local label = self:GetProfileName(spec)
+    if auto then label = label .. " (" .. L.ROLE_AUTO .. ")" end
+    if pvp   then label = label .. " [PvP]" end
 
-    local sig = class .. ":" .. profileName .. ":" .. tostring(UnitLevel("player"))
+    local sig = class .. ":" .. tostring(spec.id) .. ":" .. tostring(pvp)
+        .. ":" .. tostring(UnitLevel("player"))
         .. ":" .. tostring(self.db and self.db.ilvlWeight)
         .. ":" .. tostring(self.db and self.db.ilvlScaling)
+        .. ":" .. tostring(spec.rev or 0)
 
     self.profileCache = { weights = weights, name = label, sig = sig,
-                          profile = profileName }
+                          profile = spec.id, spec = spec, auto = auto }
     return weights, label, sig
+end
+
+function EG:GetActiveSpec()
+    self:GetProfile()
+    return self.profileCache and self.profileCache.spec
+end
+
+------------------------------------------------------------------------------
+-- Eigene Profile
+------------------------------------------------------------------------------
+
+function EG:CreateCustomProfile(name, baseID, class)
+    if not self.db then return nil end
+    self.db.custom = self.db.custom or {}
+
+    name = (name and name ~= "") and name or "Profil"
+
+    -- eindeutige ID erzeugen
+    local base, n = "CUSTOM_" .. sgsub(name, "[^%w]", ""), 1
+    if base == "CUSTOM_" then base = "CUSTOM_PROFIL" end
+    local id = base
+    while self.db.custom[id] or self:GetProfileByID(id) do
+        n = n + 1
+        id = base .. n
+    end
+
+    local source = baseID and self:GetProfileByID(baseID)
+    local weights = {}
+    if source and source.weights then
+        for k, v in pairs(source.weights) do weights[k] = v end
+    end
+
+    self.db.custom[id] = {
+        id = id, name = name, custom = true, rev = 1,
+        class = class or self:GetPlayerClass(),
+        role = source and source.role or "MELEE",
+        desc = source and (L.PROFILE .. ": " .. self:GetProfileName(source)) or "",
+        weights = weights,
+    }
+    return id
+end
+
+function EG:DeleteCustomProfile(id)
+    if not (self.db and self.db.custom and self.db.custom[id]) then return false end
+    self.db.custom[id] = nil
+    if self:GetActiveProfileID() == id then
+        self.charDB.profile = "AUTO"
+    end
+    self:InvalidateProfile()
+    self:RefreshAllBags()
+    return true
+end
+
+function EG:SetCustomWeight(id, statKey, value)
+    local c = self.db and self.db.custom and self.db.custom[id]
+    if not c then return false end
+    value = tonumber(value)
+    if not value or value == 0 then
+        c.weights[statKey] = nil
+    else
+        c.weights[statKey] = value
+    end
+    c.rev = (c.rev or 1) + 1
+    self:InvalidateProfile()
+    self:WipeItemCache()
+    self:RefreshAllBags()
+    return true
+end
+
+function EG:RenameCustomProfile(id, name)
+    local c = self.db and self.db.custom and self.db.custom[id]
+    if not c or not name or name == "" then return false end
+    c.name = name
+    c.rev = (c.rev or 1) + 1
+    self:InvalidateProfile()
+    return true
 end
 
 function EG:GetProfileKey()
@@ -716,9 +940,10 @@ EG.scoreCache = {}
 local itemCacheCount = 0
 
 function EG:WipeItemCache()
-    self.itemCache  = {}
-    self.scoreCache = {}
-    itemCacheCount  = 0
+    self.itemCache      = {}
+    self.scoreCache     = {}
+    self.equippedTotals = nil
+    itemCacheCount      = 0
 end
 
 -- Statwerte aus dem Tooltip lesen (fuer Erbstuecke, deren GetItemStats()
@@ -966,6 +1191,112 @@ function EG:GetScoreBreakdown(item)
     end
 
     return rows, total
+end
+
+--[[ Summiert alle Werte der angelegten Ausruestung.
+
+     Die Wertung ist linear (Summe aus Gegenstandsstufe x Gewicht und
+     Attribut x Gewicht), deshalb ergibt die Summe der Einzelwerte,
+     multipliziert mit den Gewichten, exakt dieselbe Gesamtwertung wie das
+     Aufaddieren der einzelnen Itemwertungen. Damit laesst sich die
+     komplette Ausruestung unter beliebigen Gewichten durchrechnen.       ]]
+function EG:GetEquippedTotals(force)
+    if self.equippedTotals and not force then return self.equippedTotals end
+
+    local t = { __ILVL = 0, __DPS = 0, __SOCKET = 0, __COUNT = 0 }
+    for slot = 1, MAX_EQUIP_SLOT do
+        local link = GetInventoryItemLink("player", slot)
+        if link then
+            local item = self:GetItemData(link)
+            if item then
+                t.__COUNT  = t.__COUNT + 1
+                t.__ILVL   = t.__ILVL + (item.level or 0)
+                t.__DPS    = t.__DPS + (item.dps or 0)
+                t.__SOCKET = t.__SOCKET + (item.sockets or 0)
+                if item.stats then
+                    for k, v in pairs(item.stats) do
+                        t[k] = (t[k] or 0) + v
+                    end
+                end
+            end
+        end
+    end
+
+    self.equippedTotals = t
+    return t
+end
+
+function EG:InvalidateEquippedTotals()
+    self.equippedTotals = nil
+end
+
+--[[ Berechnungsgrundlage fuer eine beliebige Wertesammlung unter
+     beliebigen Gewichten. Wird fuer den Profilvergleich benutzt.         ]]
+function EG:BuildTotalsBreakdown(totals, weights)
+    local rows, total = {}, 0
+    if not totals or not weights then return rows, 0 end
+
+    local ilvlWeight = self:GetEffectiveIlvlWeight()
+    if ilvlWeight > 0 and (totals.__ILVL or 0) > 0 then
+        local pts = totals.__ILVL * ilvlWeight
+        total = total + pts
+        rows[#rows + 1] = { key = "__ILVL", label = L.BASE_ILVL,
+                            value = totals.__ILVL, weight = ilvlWeight, points = pts }
+    end
+
+    local seen = {}
+    for _, key in ipairs(STAT_ORDER) do
+        local v = totals[key]
+        local w = weights[key]
+        if v and v ~= 0 and w and w ~= 0 then
+            seen[key] = true
+            local pts = v * w
+            total = total + pts
+            rows[#rows + 1] = { key = key, label = self:GetLocalizedStatName(key),
+                                value = v, weight = w, points = pts }
+        end
+    end
+
+    for key, v in pairs(totals) do
+        if not seen[key] and key ~= "__ILVL" and key ~= "__DPS"
+            and key ~= "__SOCKET" and key ~= "__COUNT" then
+            local w = weights[key]
+            if v ~= 0 and w and w ~= 0 then
+                local pts = v * w
+                total = total + pts
+                rows[#rows + 1] = { key = key, label = self:GetLocalizedStatName(key),
+                                    value = v, weight = w, points = pts }
+            end
+        end
+    end
+
+    local dw = weights[PSEUDO_DPS]
+    if (totals.__DPS or 0) > 0 and dw and dw ~= 0 then
+        local pts = totals.__DPS * dw
+        total = total + pts
+        rows[#rows + 1] = { key = PSEUDO_DPS, label = L.WEAPON_DPS,
+                            value = totals.__DPS, weight = dw, points = pts }
+    end
+
+    local sw = tonumber(self.db and self.db.socketValue) or DEFAULTS.socketValue
+    if (totals.__SOCKET or 0) > 0 and sw and sw ~= 0 then
+        local pts = totals.__SOCKET * sw
+        total = total + pts
+        rows[#rows + 1] = { key = PSEUDO_SOCKET, label = L.SOCKETS,
+                            value = totals.__SOCKET, weight = sw, points = pts }
+    end
+
+    return rows, total
+end
+
+-- Wertung eines einzelnen Items unter beliebigen Gewichten
+function EG:GetItemScoreUnder(item, weights)
+    if not item or not weights then return 0 end
+    local saved = self.profileCache
+    self.profileCache = { weights = weights, name = "tmp", profile = "tmp" }
+    local _, total = self:GetScoreBreakdown(item)
+    self.profileCache = saved
+    return total
 end
 
 function EG:GetItemScore(item)
@@ -2430,6 +2761,10 @@ function EG:PrintHelp()
     self:Raw(COLOR.value .. "/eg" .. COLOR.reset .. "                  " .. L.CMD_EG)
     self:Raw(COLOR.value .. "/eg <itemlink>" .. COLOR.reset .. "       " .. L.CMD_EG_LINK)
     self:Raw(COLOR.value .. "/eggui" .. COLOR.reset)
+    self:Raw(COLOR.value .. "/egprofile" .. COLOR.reset .. "           " .. L.CMD_EGPROFILE)
+    self:Raw(COLOR.value .. "/eg profile list" .. COLOR.reset)
+    self:Raw(COLOR.value .. "/eg profile <id|auto>" .. COLOR.reset)
+    self:Raw(COLOR.value .. "/eg pvp" .. COLOR.reset)
     self:Raw(COLOR.value .. "/eg role <auto|tank|melee|ranged|caster|heal>" .. COLOR.reset)
     self:Raw(COLOR.value .. "/eg ilvl <zahl>" .. COLOR.reset)
     self:Raw(COLOR.value .. "/eg ilvlscale <on|off>" .. COLOR.reset)
@@ -2443,11 +2778,32 @@ function EG:PrintHelp()
     self:Raw(COLOR.value .. "/egupclean" .. COLOR.reset .. "           " .. L.CMD_EGUPCLEAN)
 end
 
+function EG:PrintProfileList()
+    local activeID = self:GetActiveProfileID()
+    local active   = self:GetActiveSpec()
+
+    self:Raw(COLOR.title .. L.PROFILE_LIST .. COLOR.reset)
+    self:Raw(sformat("  %s%-16s%s %s", COLOR.value, "AUTO", COLOR.reset,
+        L.PROFILE_AUTO_HINT))
+
+    for _, spec in ipairs(self:GetAvailableProfiles()) do
+        local mark = "  "
+        if activeID == spec.id or (activeID == "AUTO" and active and active.id == spec.id) then
+            mark = COLOR.good .. ">>" .. COLOR.reset
+        end
+        local tag = spec.custom and (COLOR.warn .. "*" .. COLOR.reset) or " "
+        self:Raw(sformat("%s%s %s%-18s%s %s", mark, tag,
+            COLOR.value, spec.id, COLOR.reset, self:GetProfileName(spec)))
+    end
+    self:Raw(COLOR.grey .. L.PROFILE_CMD_HINT .. COLOR.reset)
+end
+
 function EG:PrintStatus()
     local _, profileName = self:GetProfile()
     self:Raw(COLOR.title .. "EasyGear " .. ADDON_VERSION .. COLOR.reset)
     self:Raw(L.PROFILE .. ": " .. COLOR.value .. tostring(profileName) .. COLOR.reset
-        .. " (" .. tostring(self.charDB.role) .. ")")
+        .. "  [" .. tostring(self:GetActiveProfileID()) .. "]")
+    self:Raw("PvP: " .. OnOff(self:IsPvPMode()))
     local eff, base, factor = self:GetEffectiveIlvlWeight()
     self:Raw(L.SET_ILVL:format(FmtWeight(base) .. " -> " .. FmtWeight(eff)))
     self:Raw(L.SET_ILVLSCALE:format(OnOff(self.db.ilvlScaling ~= false),
@@ -2492,20 +2848,46 @@ SlashCmdList["EASYGEAR"] = function(msg)
         if EG.GUI then EG.GUI:Toggle() end; return
     elseif cmd == "status" then
         EG:PrintStatus(); return
-    elseif cmd == "role" then
-        local role = string.upper(rest or "")
-        if role == "" then
-            EG:Print(L.SET_ROLE:format(EG.charDB.role)); return
-        end
-        if role == "AUTO" or ROLE_TO_PROFILE[role] then
-            EG.charDB.role = role
-            EG:InvalidateProfile()
-            EG:RefreshAllBags()
-            EG:Print(L.SET_ROLE:format(L["ROLE_" .. role] or role))
-            if EG.GUI then EG.GUI:Refresh() end
+    elseif cmd == "profiles" or cmd == "profile" then
+        if rest == "" or rest == "list" then
+            EG:PrintProfileList()
+        elseif slower(rest) == "gui" then
+            if EG.ProfileGUI then EG.ProfileGUI:Toggle() end
+        elseif slower(rest) == "auto" then
+            EG:SetActiveProfile("AUTO")
+            EG:Print(L.SET_PROFILE:format(L.ROLE_AUTO))
         else
-            EG:Print("auto | tank | melee | ranged | caster | heal")
+            local id = string.upper(rest)
+            local spec = EG:GetProfileByID(id)
+            if spec then
+                EG:SetActiveProfile(id)
+                EG:Print(L.SET_PROFILE:format(EG:GetProfileName(spec)))
+            else
+                EG:Print(COLOR.bad .. L.PROFILE_UNKNOWN:format(rest) .. COLOR.reset)
+                EG:PrintProfileList()
+            end
         end
+        return
+    elseif cmd == "pvp" then
+        EG:SetPvPMode(not EG:IsPvPMode())
+        EG:Print(L.SET_PVP:format(OnOff(EG:IsPvPMode())))
+        return
+    elseif cmd == "role" then
+        -- Alter Befehl: waehlt das erste Profil der Klasse mit dieser Rolle
+        local role = string.upper(rest or "")
+        if role == "" or role == "AUTO" then
+            EG:SetActiveProfile("AUTO")
+            EG:Print(L.SET_PROFILE:format(L.ROLE_AUTO))
+            return
+        end
+        for _, spec in ipairs(EG:GetAvailableProfiles()) do
+            if spec.role == role then
+                EG:SetActiveProfile(spec.id)
+                EG:Print(L.SET_PROFILE:format(EG:GetProfileName(spec)))
+                return
+            end
+        end
+        EG:Print("auto | tank | melee | ranged | caster | heal")
         return
     elseif cmd == "ilvl" then
         local v = tonumber(rest)
@@ -2562,8 +2944,10 @@ SlashCmdList["EASYGEAR"] = function(msg)
         return
     elseif cmd == "reset" then
         for k, v in pairs(DEFAULTS) do EG.db[k] = v end
-        EG.charDB.role = "AUTO"
-        EG.charDB.gui  = { point = "CENTER", x = 0, y = 0, scale = 1.0 }
+        EG.charDB.role    = "AUTO"
+        EG.charDB.profile = "AUTO"
+        EG.charDB.pvp     = false
+        EG.charDB.gui     = { point = "CENTER", x = 0, y = 0, scale = 1.0 }
         EG:InvalidateProfile()
         EG:WipeItemCache()
         EG:RefreshAllBags()
@@ -2595,6 +2979,12 @@ end
 SLASH_EASYGEARGUI1 = "/eggui"
 SlashCmdList["EASYGEARGUI"] = function()
     if EG.GUI then EG.GUI:Toggle() else EG:Print("GUI not loaded.") end
+end
+
+SLASH_EASYGEARPROFILE1 = "/egprofile"
+SLASH_EASYGEARPROFILE2 = "/egprofil"
+SlashCmdList["EASYGEARPROFILE"] = function()
+    if EG.ProfileGUI then EG.ProfileGUI:Toggle() else EG:PrintProfileList() end
 end
 
 SLASH_EGUP1 = "/egup"
@@ -2671,12 +3061,14 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         EG:HookTooltips()
 
         if EG.GUI and EG.GUI.OnInit then EG.GUI:OnInit() end
+        if EG.ProfileGUI and EG.ProfileGUI.OnInit then EG.ProfileGUI:OnInit() end
         return
     end
 
     if event == "PLAYER_LEVEL_UP" or event == "CHARACTER_POINTS_CHANGED" then
         EG:InvalidateProfile()
         EG:WipeItemCache()
+        EG:InvalidateEquippedTotals()
         EG:Debounce("refresh", 0.5, function()
             EG:RefreshAllBags()
             if EG.GUI then EG.GUI:Refresh() end
@@ -2691,6 +3083,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
             -- ueber die Epoche invalidieren, nicht nur den Score-Cache.
             EG.scoreCache = {}
             EG.epoch = (EG.epoch or 0) + 1
+            EG:InvalidateEquippedTotals()
             EG:Debounce("inv", 0.3, function()
                 EG:RefreshAllBags()
                 if EG.GUI then EG.GUI:Refresh() end

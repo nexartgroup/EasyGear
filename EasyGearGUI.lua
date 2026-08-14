@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.0.3 - Vergleichsfenster  (/eggui)
+    EasyGear 2.2.0 - Vergleichsfenster  (/eggui)
 
     Links:  das abgelegte Item mit allen Berechnungsgrundlagen
     Rechts: das aktuell angelegte Gegenstueck mit derselben Aufschluesselung
@@ -28,8 +28,6 @@ local FRAME_W, FRAME_H = 660, 530
 local PANEL_W, PANEL_H = 310, 376
 local MAX_ROWS         = 14
 local ROW_H            = 15
-
-local ROLE_CYCLE = { "AUTO", "TANK", "MELEE", "RANGED", "CASTER", "HEAL" }
 
 local BACKDROP_MAIN = {
     bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -326,17 +324,20 @@ function GUI:Create()
     roleBtn:SetWidth(120)
     roleBtn:SetHeight(20)
     roleBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -40, -38)
+    roleBtn:SetWidth(190)
     roleBtn:SetScript("OnClick", function()
-        local current = EG.charDB.role or "AUTO"
-        local nextIndex = 1
-        for i, r in ipairs(ROLE_CYCLE) do
-            if r == current then nextIndex = (i % #ROLE_CYCLE) + 1 break end
-        end
-        EG.charDB.role = ROLE_CYCLE[nextIndex]
-        EG:InvalidateProfile()
-        EG:RefreshAllBags()
-        GUI:Refresh()
+        if EG.ProfileGUI then EG.ProfileGUI:Toggle() else EG:PrintProfileList() end
     end)
+    roleBtn:SetScript("OnEnter", function(s_)
+        GameTooltip:SetOwner(s_, "ANCHOR_LEFT")
+        GameTooltip:SetText(L.PROFILE, 1, 0.82, 0)
+        local spec = EG:GetActiveSpec()
+        if spec then
+            GameTooltip:AddLine(EG:GetProfileDesc(spec), 1, 1, 1, true)
+        end
+        GameTooltip:Show()
+    end)
+    roleBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     f.roleBtn = roleBtn
 
     -- Schliessen
@@ -504,10 +505,10 @@ function GUI:Refresh()
 
     -- Profil / Rolle
     local _, profileName = EG:GetProfile()
-    local roleKey = EG.charDB.role or "AUTO"
     f.profileText:SetText(sformat("%s: %s%s%s", L.PROFILE,
         COLOR.value, tostring(profileName), COLOR.reset))
-    f.roleBtn:SetText(L["ROLE_" .. roleKey] or roleKey)
+    local spec = EG:GetActiveSpec()
+    f.roleBtn:SetText(spec and EG:GetProfileName(spec) or L.ROLE_AUTO)
 
     for i = 1, 2 do self.slotTabs[i]:Hide() end
 
@@ -534,6 +535,9 @@ function GUI:Refresh()
     end
 
     self.retries = nil
+    if EG.ProfileGUI and EG.ProfileGUI.frame and EG.ProfileGUI.frame:IsShown() then
+        EG.ProfileGUI:Refresh()
+    end
 
     -- Linke Seite
     FillSide(self.left, result.item, result.breakdown, result.score,

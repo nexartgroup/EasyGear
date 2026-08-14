@@ -33,7 +33,11 @@ Danach `/reload` oder Client neu starten.
 | `/eggui` | dasselbe, expliziter Aufruf |
 | `/eg <itemlink>` | ausführliche Auswertung im Chat |
 | `/eg <itemID>` | Auswertung über die Item-ID |
-| `/eg role <auto\|tank\|melee\|ranged\|caster\|heal>` | Rollenprofil festlegen |
+| `/egprofile` | Profilübersicht, Vergleich und Editor |
+| `/eg profile list` | alle Profile im Chat |
+| `/eg profile <id\|auto>` | Profil aktivieren |
+| `/eg pvp` | PvP-Modus umschalten |
+| `/eg role <auto\|tank\|melee\|ranged\|caster\|heal>` | wählt das erste Profil der Klasse mit dieser Rolle |
 | `/eg ilvl <zahl>` | Gewicht der Gegenstandsstufe (auf Stufe 80) |
 | `/eg ilvlscale <on\|off>` | Skalierung der Gegenstandsstufe mit der Charakterstufe |
 | `/eg mindelta <zahl>` | absoluter Mindestvorsprung für „Verbesserung" |
@@ -98,13 +102,98 @@ Ein Vorsprung von 0.1 Punkten bei einer Wertung von 2.5 ist Rauschen. Die Schwel
 ist deshalb absolut **und** relativ: `max(minDelta, minDeltaPercent % des
 Vergleichswerts)`, standardmäßig 1 %.
 
-Die Gewichte kommen aus einem **Rollenprofil**. Das Profil wird automatisch aus dem Talentbaum mit den meisten Punkten abgeleitet (z. B. Paladin Schutz → Tank, Schamane Elementar → Caster) und lässt sich mit `/eg role` oder dem Knopf im Fenster überschreiben. Unter Stufe 15 greift ein neutrales Anfängerprofil.
+Die Gewichte kommen aus einem **Profil**. Siehe unten.
 
-Eigene Gewichte pro Charakter sind über `EasyGearCharDB.weights` möglich, z. B.:
+---
 
-```lua
-EasyGearCharDB.weights = { ITEM_MOD_HIT_RATING_SHORT = 2.0 }
+## Profile (`/EGPROFILE`)
+
+36 Profile sind eingebaut: für jede der 10 Klassen jeder Talentbaum, plus eigene
+Einträge dort, wo sich die Gewichtung **innerhalb** eines Baums real
+unterscheidet — Blut-Tank gegen Blut-DD, Frost beidhändig gegen Zweihand,
+Wildheit Katze gegen Bär. Dazu zwei klassenunabhängige: „Levelphase (neutral)"
+und „Nur Gegenstandsstufe".
+
+| Klasse | Profile |
+| --- | --- |
+| Krieger | Waffen (Zweihand), Furor (beidhändig), Schutz (Tank) |
+| Paladin | Heilig, Schutz (Tank), Vergeltung |
+| Jäger | Tierherrschaft, Treffsicherheit, Überleben |
+| Schurke | Meucheln (Dolche), Kampf (Schwerter), Täuschung |
+| Priester | Disziplin, Heilig, Schatten |
+| Todesritter | Blut (Tank), Blut (Zweihand-DD), Frost (beidhändig), Frost (Zweihand), Frost (Tank), Unheilig |
+| Schamane | Elementar, Verstärkung, Wiederherstellung |
+| Magier | Arkan, Feuer, Frost |
+| Hexenmeister | Gebrechen, Dämonologie, Zerstörung |
+| Druide | Gleichgewicht, Wildheit Katze, Wildheit Bär, Wiederherstellung |
+
+Die Unterschiede sind keine Kosmetik. Beispiele: Frost-Todesritter beidhändig
+gewichtet Trefferwertung mit 1.40, die Zweihandvariante mit 1.15 — beidhändig
+braucht schlicht mehr Treffer. Der Bär gewichtet Rüstung mit 0.10 und hat gar
+keine Blockwerte, der Schutzpaladin dagegen Blockwert mit 0.55.
+
+**Auswahl.** Ohne Zutun wird der Talentbaum mit den meisten Punkten erkannt und
+das dortige Standardprofil genommen. Wo ein Baum mehrere Profile hat, ist eines
+als Standard markiert (Blut → Tank, Wildheit → Katze, Frost-DK → beidhändig);
+die Alternativen wählst du im Fenster. Unter 5 gesetzten Talentpunkten greift
+„Levelphase (neutral)".
+
+**Fenster (`/EGPROFILE`).** Aufbau wie der Item-Vergleich, nur mit Profilen
+statt Items:
+
 ```
+        Vergleichsprofil                    Aktives Profil
+        Schutz (Tank)                       Waffen (Zweihand)
+
+Attribut        Wert  Gewicht  Punkte   Attribut        Wert  Gewicht  Punkte
+Ausdauer        1450  x 1.00   1450     Ausdauer        1450  x 0.10    145
+Verteidigung     540  x 1.20    648     Verteidigung     540  x 0.00      0
+Stärke           980  x 0.55    539     Stärke           980  x 1.00    980
+...
+
+Ausrüstungswertung     7755     Ausrüstungswertung     7710
+```
+
+Links das gewählte Vergleichsprofil (Klasse und Profil über die beiden
+Auswahlfelder oben), rechts immer das **aktuell aktive**. Die Wertespalte ist auf
+beiden Seiten identisch — es sind die Summen deiner angelegten Ausrüstung.
+Unterschiedlich sind Gewicht und Punkte. Damit siehst du direkt, was deine
+aktuelle Ausrüstung unter einem anderen Build wert wäre und welche Attribute die
+Punkte tragen.
+
+Beide Seiten benutzen **eine gemeinsame Zeilenliste** (Vereinigung beider
+Gewichtssätze), damit dasselbe Attribut links und rechts auf derselben Zeile
+steht. Die Punktespalte ist grün, wo diese Seite mehr Punkte holt, und rot, wo
+weniger. Mausrad scrollt, falls die Liste länger wird als das Fenster.
+
+Über die Klassenauswahl erreichst du auch die Profile **anderer** Klassen — als
+Nachschlagewerk oder als Ausgangspunkt für ein eigenes Profil.
+
+> Ein Vorbehalt, den das Fenster auch selbst anzeigt: Die Gesamtsummen zweier
+> Profile sind nur grob vergleichbar, weil die Gewichtssätze zwar auf das
+> Primärattribut normiert, aber nicht gegeneinander geeicht sind. Ein höherer
+> Gesamtwert heißt **nicht** „dieses Profil ist besser für dich". Aussagekräftig
+> ist die Verteilung je Attribut.
+
+Liegt im Item-Vergleichsfenster ein Item, steht unten zusätzlich dessen Wertung
+unter beiden Profilen — du siehst also sofort, ob ein Item nur unter dem einen
+Build ein Upgrade ist.
+
+**PvP-Modus.** Ein Schalter statt 36 zusätzlicher Profile: Abhärtung bekommt
+mindestens 1.00, Ausdauer wird auf das 2,5-fache angehoben. Gilt für das jeweils
+aktive Profil.
+
+**Aktivieren.** „A aktivieren" setzt das links gewählte Profil als aktives — die
+rechte Seite zieht dann nach.
+
+**Eigene Profile.** „Bearbeiten" macht aus der linken Gewichtsspalte
+Eingabefelder; die Punkte und die Summe rechnen live mit, während du tippst, und
+rechts steht weiter das aktive Profil als Referenz. Im Bearbeitungsmodus werden
+alle Attribute gezeigt, auch die mit Gewicht 0 — so lässt sich ein bisher
+ungenutztes ergänzen. Dann entweder „Als neues Profil speichern" (funktioniert
+auch ausgehend von einem eingebauten Profil) oder bei einem eigenen Profil
+„Speichern" zum Überschreiben. Eigene Profile sind mit `*` markiert, gelten
+accountweit und stehen sofort in der Auswahl.
 
 ### Waffenhand und Schildhand
 
