@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.2.0 - Vergleichsfenster  (/eggui)
+    EasyGear 2.3.0 - Vergleichsfenster  (/eggui)
 
     Links:  das abgelegte Item mit allen Berechnungsgrundlagen
     Rechts: das aktuell angelegte Gegenstueck mit derselben Aufschluesselung
@@ -241,7 +241,17 @@ local function FillSide(side, item, rows, total, link, extraMeta)
 
     side.itemMeta:SetText(sformat("%s %s  |  %s", L.ILVL, tostring(item.level or 0),
         tostring(item.itemSubType or item.itemType or "")))
-    side.itemMeta2:SetText(extraMeta or "")
+    local meta2 = extraMeta or ""
+    if item.enchanted or (item.gemCount or 0) > 0 then
+        local marks = {}
+        if item.enchanted then marks[#marks + 1] = L.ENCHANTED end
+        if (item.gemCount or 0) > 0 then
+            marks[#marks + 1] = sformat(L.GEMMED, item.gemCount)
+        end
+        local tag = COLOR.good .. table.concat(marks, ", ") .. COLOR.reset
+        meta2 = (meta2 ~= "") and (meta2 .. "  |  " .. tag) or tag
+    end
+    side.itemMeta2:SetText(meta2)
 
     if side.icon then
         side.icon:SetTexture(item.texture)

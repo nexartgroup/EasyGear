@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.2.0 - Profildatenbank (WotLK 3.3.5a)
+    EasyGear 2.3.0 - Profildatenbank (WotLK 3.3.5a)
 
     Ein Eintrag pro sinnvollem Spielstil, nicht pro Talentbaum: wo sich die
     Gewichtung innerhalb eines Baums real unterscheidet (Blut-Tank gegen

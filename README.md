@@ -104,6 +104,44 @@ Vergleichswerts)`, standardmäßig 1 %.
 
 Die Gewichte kommen aus einem **Profil**. Siehe unten.
 
+### Verzauberungen und Sockelsteine
+
+`GetItemStats()` liest nur die Basiswerte aus dem Itemlink. Verzauberungen
+stehen in `SpellItemEnchantment.dbc` und tauchen dort **nicht** auf — eine
+verzauberte Waffe lieferte damit dieselben Werte wie eine unverzauberte.
+
+Deshalb wird zusätzlich der Tooltip ausgewertet, denn dort steht die
+Verzauberung als eigene grüne Zeile. WotLK benutzt zwei Formate, beide werden
+erkannt:
+
+```
++55 Ausdauer                                 Primärattribute, Sockelsteine
+Ausrüsten: Verbessert Tempowertung um 55.    Wertungen
+```
+
+Die Muster werden zur Laufzeit aus den lokalisierten Blizzard-Globals gebaut
+(`ITEM_MOD_*_SHORT` und `ITEM_MOD_*`), sind also nicht auf eine Sprache
+festgelegt. Sie sind vorne und hinten verankert — sonst würde ein Proc-Text wie
+*„Erhöht Eure Angriffskraft um 340 für 10 Sek."* als dauerhafter Wert gezählt.
+
+Zusammengeführt wird über das Maximum aus Basiswert und Tooltipsumme: Der
+Tooltip listet Basis, Verzauberung und Steine in getrennten Zeilen, seine Summe
+ist also normalerweise der größere Wert. Scheitert das Auslesen einer Zeile,
+bleibt der Basiswert erhalten — so kann nichts verlorengehen und nichts doppelt
+gezählt werden.
+
+Weitere Vorkehrungen gegen Doppelzählung:
+
+* **Graue Zeilen** werden übersprungen — das sind inaktive Sockel- und Setboni.
+* **Ab der Set-Kopfzeile** (`Name (2/5)`) wird abgebrochen, weil Setboni an
+  anderen Teilen hängen und sonst mehrfach in die Summe gingen.
+* **Rote Zeilen** zählen nicht; sie dienen weiter der Verwendbarkeitsprüfung.
+
+Ob ein Item verzaubert oder gesockelt ist, steht jetzt im Vergleichsfenster und
+in der Chat-Ausgabe. Da alle drei Tooltip-Auswertungen (Verwendbarkeit,
+Waffen-DPS, Werte) in einem Durchlauf passieren und pro Itemlink
+zwischengespeichert werden, ist das trotz des Mehraufwands schneller als vorher.
+
 ---
 
 ## Profile (`/EGPROFILE`)
@@ -278,6 +316,7 @@ Item-IDs stehen in der Tabelle `EGUP_ITEMS`, die Klassenzuordnung in `EGUP_PACKA
 
 ## Bekannte Grenzen
 
+* Verzauberungen ohne Zahlenwert (z. B. *Kreuzfahrer*, *Berserker*) lassen sich nicht bewerten und fließen nicht ein.
 * Wertungen liegen auf niedrigen Stufen im Bereich 0–5 und auf Stufe 80 im dreistelligen Bereich. Die Zahl ist eine relative Rangfolge, kein absoluter Wert — vergleichbar sind nur Wertungen desselben Charakters zum selben Zeitpunkt.
 * Die Wertung ist eine Heuristik. Trefferwertungs-Obergrenzen, Setboni, Prozeduren und Waffengeschwindigkeit werden nicht bewertet.
 * Erbstückwerte stammen aus dem Tooltip und sind Näherungswerte.

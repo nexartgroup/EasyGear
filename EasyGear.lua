@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.2.0
+    EasyGear 2.3.0
     Gear-Bewertung, Upgrade-Erkennung und Vergleich fuer WoW 3.3.5a (WotLK)
 
     Kompatibilitaet:
@@ -32,7 +32,7 @@
 ------------------------------------------------------------------------------
 
 local ADDON_NAME    = "EasyGear"
-local ADDON_VERSION = "2.2.0"
+local ADDON_VERSION = "2.3.0"
 
 EasyGear = EasyGear or {}
 local EG = EasyGear
@@ -159,6 +159,8 @@ do
         ROLE_HEAL         = "Healer",
         -- Einstellungen
         SET_ROLE          = "Role set to: %s",
+        ENCHANTED         = "enchanted",
+        GEMMED            = "%d gem(s)",
         P_CANDIDATE       = "Comparison profile",
         P_ACTIVEPROF      = "Active profile",
         P_CLASS           = "Class",
@@ -184,23 +186,12 @@ do
         PROFILE_UNKNOWN   = "Unknown profile: %s",
         CMD_EGPROFILE     = "- profile overview and comparison",
         P_TITLE           = "EasyGear - Profiles",
-        P_COMPARE_A       = "Profile A",
-        P_COMPARE_B       = "Profile B",
-        P_HINT            = "Left click = A   |   right click = B   |   mouse wheel scrolls",
         P_ACTIVATE        = "Activate A",
-        P_NEW             = "Copy A",
         P_EDIT            = "Edit",
-        P_SAVE            = "Save",
         P_DELETE          = "Delete",
         P_PVP             = "PvP mode (resilience and stamina)",
-        P_ACTIVE          = "active",
-        P_DIFF            = "Diff",
-        P_NAME            = "Name",
         P_NEW_PROMPT      = "Name for the new profile:",
-        P_DELETE_CONFIRM  = "Really delete the profile %s?",
         P_ONLY_CUSTOM     = "Only your own profiles can be edited - use Copy A first.",
-        P_SCORE_HINT      = "Score of the item from the comparison window",
-        P_NO_ITEM         = "no item loaded",
         SET_ILVL          = "Item level weight: %s",
         SET_ON            = "enabled",
         SET_OFF           = "disabled",
@@ -290,6 +281,8 @@ do
             ROLE_CASTER       = "Zauber-DD",
             ROLE_HEAL         = "Heiler",
             SET_ROLE          = "Rolle gesetzt: %s",
+            ENCHANTED         = "verzaubert",
+            GEMMED            = "%d Sockelstein(e)",
             P_CANDIDATE       = "Vergleichsprofil",
             P_ACTIVEPROF      = "Aktives Profil",
             P_CLASS           = "Klasse",
@@ -315,23 +308,12 @@ do
             PROFILE_UNKNOWN   = "Unbekanntes Profil: %s",
             CMD_EGPROFILE     = "- Profil\195\188bersicht und Vergleich",
             P_TITLE           = "EasyGear - Profile",
-            P_COMPARE_A       = "Profil A",
-            P_COMPARE_B       = "Profil B",
-            P_HINT            = "Linksklick = A   |   Rechtsklick = B   |   Mausrad scrollt",
             P_ACTIVATE        = "A aktivieren",
-            P_NEW             = "A kopieren",
             P_EDIT            = "Bearbeiten",
-            P_SAVE            = "Speichern",
             P_DELETE          = "L\195\182schen",
             P_PVP             = "PvP-Modus (Abh\195\164rtung und Ausdauer)",
-            P_ACTIVE          = "aktiv",
-            P_DIFF            = "Diff",
-            P_NAME            = "Name",
             P_NEW_PROMPT      = "Name f\195\188r das neue Profil:",
-            P_DELETE_CONFIRM  = "Profil %s wirklich l\195\182schen?",
             P_ONLY_CUSTOM     = "Nur eigene Profile lassen sich bearbeiten - zuerst A kopieren.",
-            P_SCORE_HINT      = "Wertung des Items aus dem Vergleichsfenster",
-            P_NO_ITEM         = "kein Item geladen",
             SET_ILVL          = "Gewicht Gegenstandsstufe: %s",
             SET_ON            = "aktiviert",
             SET_OFF           = "deaktiviert",
@@ -520,42 +502,37 @@ local function IsRed(fs)
     return r and r > 0.85 and g < 0.25 and b < 0.25
 end
 
---[[ Liefert: verwendbar (bool), Grund (string|nil)
-     Die roten Tooltipzeilen sind die zuverlaessigste, sprachunabhaengige
-     Quelle fuer "kann ich das anlegen?" - sie decken Klassenbindung,
-     Ruf, Beruf und Rassenbindung mit ab.                                  ]]
+local function IsGrey(fs)
+    if not fs then return false end
+    local r, g, b = fs:GetTextColor()
+    if not r then return false end
+    return r > 0.4 and r < 0.62 and g > 0.4 and g < 0.62 and b > 0.4 and b < 0.62
+end
+
+EG.IsRedLine  = function(_, fs) return IsRed(fs) end
+EG.IsGreyLine = function(_, fs) return IsGrey(fs) end
+EG.SetScanTip = function(_, link) return SetScanTip(link) end
+EG.TipLine    = function(_, i) return TipLine(i) end
+EG.ScanTipObj = scanTip
+EG.DpsPattern      = dpsPattern
+EG.MinLevelPattern = minLevelPattern
+
+--[[ Die eigentliche Auswertung steht weiter unten bei den Itemdaten
+     (EG:ScanItemTooltip), weil sie die Statschluessel aus Abschnitt 05
+     braucht. Die folgenden beiden Funktionen sind nur noch bequeme
+     Zugriffe auf dasselbe, einmal zwischengespeicherte Ergebnis.          ]]
+
+-- Liefert: verwendbar (bool), Grund (string|nil)
 function EG:TooltipUsable(link)
-    if not SetScanTip(link) then return nil end
-    local reason
-    for i = 2, scanTip:NumLines() do
-        local fs = TipLine(i)
-        local text = fs and fs:GetText()
-        if text and text ~= "" and IsRed(fs) then
-            -- reine Stufenanforderung wird separat gemeldet
-            if not smatch(text, minLevelPattern) then
-                reason = text
-                break
-            end
-        end
-    end
-    if reason then return false, reason end
+    local scan = self:ScanItemTooltip(link)
+    if not scan then return nil end
+    if scan.reason then return false, scan.reason end
     return true
 end
 
 function EG:TooltipDPS(link)
-    if not SetScanTip(link) then return nil end
-    for i = 2, scanTip:NumLines() do
-        local fs = TipLine(i)
-        local text = fs and fs:GetText()
-        if text then
-            local v = smatch(text, dpsPattern)
-            if v then
-                v = sgsub(v, ",", ".")
-                return tonumber(v)
-            end
-        end
-    end
-    return nil
+    local scan = self:ScanItemTooltip(link)
+    return scan and scan.dps or nil
 end
 
 ------------------------------------------------------------------------------
@@ -942,52 +919,146 @@ local itemCacheCount = 0
 function EG:WipeItemCache()
     self.itemCache      = {}
     self.scoreCache     = {}
+    self.tipCache       = {}
     self.equippedTotals = nil
     itemCacheCount      = 0
 end
 
 -- Statwerte aus dem Tooltip lesen (fuer Erbstuecke, deren GetItemStats()
 -- nur die ungeskalierten Basiswerte liefert)
+--[[--------------------------------------------------------------------
+     Tooltip-Auswertung
+
+     GetItemStats() liest nur die Basiswerte aus dem Itemlink.
+     Verzauberungen stehen in SpellItemEnchantment.dbc und tauchen dort
+     nicht auf - eine verzauberte Waffe liefert also dieselben Werte wie
+     eine unverzauberte. Die einzige verlaessliche Quelle ist der Tooltip,
+     denn dort steht die Verzauberung als eigene gruene Zeile.
+
+     WotLK benutzt dabei zwei Formate:
+       "+55 Ausdauer"                                (Primaerattribute)
+       "Ausruesten: Verbessert Tempowertung um 55."  (Wertungen)
+     Deshalb werden Muster aus beiden Globals gebaut: dem kurzen Namen
+     (ITEM_MOD_X_SHORT) und der langen Vorlage (ITEM_MOD_X).
+
+     Alle Muster sind vorne und hinten verankert. Das ist wichtig, damit
+     Proc-Texte wie "Erhoeht Eure Angriffskraft um 340 fuer 10 Sek." nicht
+     als dauerhafter Wert gezaehlt werden.
+----------------------------------------------------------------------]]
+
 local statPatternCache
+
+local function LongTemplateToPattern(tpl)
+    -- %c steht in einigen Vorlagen fuer das Vorzeichen ("%c%s Staerke")
+    local pat = sgsub(tpl, "%%c", "\2")
+    pat = sgsub(pat, "%%%d%$s", "\1")
+    pat = sgsub(pat, "%%%d%$d", "\1")
+    pat = sgsub(pat, "%%s", "\1")
+    pat = sgsub(pat, "%%d", "\1")
+    pat = EscapePattern(pat)
+    pat = sgsub(pat, "\1", "([%%d%%.,]+)")
+    pat = sgsub(pat, "\2", "%%+?")
+    return pat
+end
+
 local function BuildStatPatterns()
     if statPatternCache then return statPatternCache end
     statPatternCache = {}
+
+    local equipPrefix = ITEM_SPELL_TRIGGER_ONEQUIP or "Equip:"
+    local escPrefix   = EscapePattern(equipPrefix)
+
+    local function Add(key, pattern)
+        statPatternCache[#statPatternCache + 1] = { key = key, pattern = pattern }
+    end
+
     for _, key in ipairs(STAT_ORDER) do
-        local localized = _G[key]
-        if localized and localized ~= "" then
-            statPatternCache[#statPatternCache + 1] = {
-                key = key,
-                -- "+12 Staerke" bzw. "12 Ruestung"
-                pattern = "^%+?([%d%.,]+)%s+" .. EscapePattern(localized),
-            }
+        -- Kurzform:  "+55 Ausdauer"  /  "524 Ruestung"
+        local short = _G[key]
+        if short and short ~= "" then
+            Add(key, "^%+?([%d%.,]+)%s+" .. EscapePattern(short) .. "%.?$")
+        end
+
+        -- Langform:  "Verbessert Tempowertung um 55."
+        local longKey = smatch(key, "^(.+)_SHORT$")
+        local long    = longKey and _G[longKey]
+        if long and long ~= "" then
+            local pat = LongTemplateToPattern(long)
+            Add(key, "^" .. pat .. "$")
+            Add(key, "^" .. escPrefix .. "%s*" .. pat .. "$")
         end
     end
+
     return statPatternCache
 end
 
-function EG:ScanStatsFromTooltip(link)
+-- Kopfzeile eines Ausruestungssets: "Name (2/5)"
+local SET_HEADER_PATTERN = "^.+%s%((%d+)/(%d+)%)$"
+
+EG.tipCache = {}
+
+--[[ Einmaliger Durchlauf durch den Tooltip.
+     Rueckgabe: { reason, dps, stats, enchanted }                          ]]
+function EG:ScanItemTooltip(link)
+    if not link then return nil end
+
+    local hit = self.tipCache[link]
+    if hit then return hit end
+
     if not SetScanTip(link) then return nil end
+
     local patterns = BuildStatPatterns()
-    local stats, found = {}, false
+    local result = { stats = {}, hasStats = false }
+
     for i = 2, scanTip:NumLines() do
-        local fs = TipLine(i)
+        local fs   = TipLine(i)
         local text = fs and fs:GetText()
+
         if text and text ~= "" then
-            for _, p in ipairs(patterns) do
-                local v = smatch(text, p.pattern)
-                if v then
-                    v = tonumber((sgsub(v, ",", ".")))
-                    if v and v > 0 then
-                        stats[p.key] = (stats[p.key] or 0) + v
-                        found = true
+            -- Ab der Set-Kopfzeile nicht weiter auswerten: Setboni haengen
+            -- an anderen Teilen und wuerden sonst mehrfach gezaehlt.
+            if smatch(text, SET_HEADER_PATTERN) then break end
+
+            if IsRed(fs) then
+                -- Rote Zeile: nicht verwendbar. Die reine Stufenanforderung
+                -- wird an anderer Stelle gesondert gemeldet.
+                if not result.reason and not smatch(text, minLevelPattern) then
+                    result.reason = text
+                end
+            elseif not IsGrey(fs) then
+                -- Graue Zeilen sind inaktive Sockel- und Setboni.
+
+                if not result.dps then
+                    local v = smatch(text, dpsPattern)
+                    if v then result.dps = tonumber((sgsub(v, ",", "."))) end
+                end
+
+                for _, p in ipairs(patterns) do
+                    local v = smatch(text, p.pattern)
+                    if v then
+                        v = tonumber((sgsub(v, ",", ".")))
+                        if v and v > 0 then
+                            -- summieren: Basiswert, Verzauberung und Sockel
+                            -- stehen in getrennten Zeilen
+                            result.stats[p.key] = (result.stats[p.key] or 0) + v
+                            result.hasStats = true
+                        end
+                        break
                     end
-                    break
                 end
             end
         end
     end
-    if not found then return nil end
-    return stats
+
+    self.tipCache[link] = result
+    return result
+end
+
+-- Nur die Werte, fuer Erbstuecke (dort ersetzen sie die Basiswerte)
+function EG:ScanStatsFromTooltip(link)
+    local scan = self:ScanItemTooltip(link)
+    if not scan or not scan.hasStats then return nil end
+    return scan.stats
 end
 
 --[[ Vollstaendige Itemdaten.
@@ -1043,15 +1114,45 @@ function EG:GetItemData(itemLink)
         end
     end
 
-    -- Erbstuecke skalieren mit der Charakterstufe. Der Tooltip zeigt die
-    -- echten Werte, GetItemStats() nicht - deshalb hier nachlesen.
+    -- Verzauberung und Sockelsteine aus dem Link
+    local _, enchantId, g1, g2, g3, g4 = self:ParseLink(data.link)
+    data.enchantId = enchantId or 0
+    data.enchanted = (data.enchantId or 0) > 0
+    data.gemCount  = 0
+    for _, g in ipairs({ g1 or 0, g2 or 0, g3 or 0, g4 or 0 }) do
+        if g > 0 then data.gemCount = data.gemCount + 1 end
+    end
+
+    -- Tooltip auswerten (Verwendbarkeit, DPS und die tatsaechlichen Werte)
+    local scan = self:ScanItemTooltip(data.link)
+    if scan then
+        data._tipUsable = (scan.reason == nil)
+        data._tipReason = scan.reason
+    end
+
     if data.isHeirloom then
+        -- Erbstuecke skalieren mit der Charakterstufe; GetItemStats()
+        -- liefert dafuer nicht die angezeigten Werte, deshalb ersetzen
+        -- statt zusammenfuehren.
         local playerLevel = UnitLevel("player") or 1
         data.level = mmin(playerLevel, HEIRLOOM_MAX_LEVEL)
         data.estimated = true
-        local scanned = self:ScanStatsFromTooltip(data.link)
-        if scanned then
-            data.stats = scanned
+        if scan and scan.hasStats then
+            data.stats = scan.stats
+        end
+    elseif scan and scan.hasStats then
+        --[[ Verzauberungen und Sockelsteine stehen nur im Tooltip.
+             Zusammengefuehrt wird ueber das Maximum: der Tooltipwert ist
+             die Summe aus Basiswert, Verzauberung und Steinen und damit
+             normalerweise der groessere. Scheitert das Auslesen einer
+             Zeile, bleibt der Basiswert erhalten - so kann nichts
+             verlorengehen und nichts doppelt gezaehlt werden.            ]]
+        for key, value in pairs(scan.stats) do
+            local base = data.stats[key] or 0
+            if value > base then
+                data.stats[key] = value
+                if base > 0 or data.enchanted then data.hasExtraStats = true end
+            end
         end
     end
 
@@ -1060,18 +1161,30 @@ function EG:GetItemData(itemLink)
         or equipLoc == "INVTYPE_WEAPONMAINHAND" or equipLoc == "INVTYPE_WEAPONOFFHAND"
         or equipLoc == "INVTYPE_RANGED" or equipLoc == "INVTYPE_RANGEDRIGHT"
         or equipLoc == "INVTYPE_THROWN") then
-        data.dps = self:TooltipDPS(data.link) or 0
+        data.dps = (scan and scan.dps) or 0
     end
 
     -- Cache begrenzen, damit lange Sitzungen nicht wachsen
     itemCacheCount = itemCacheCount + 1
-    if itemCacheCount > 1500 then
+    if itemCacheCount > 1200 then
         self:WipeItemCache()
         itemCacheCount = 1
     end
     self.itemCache[itemLink] = data
 
     return data
+end
+
+--[[ Zerlegt den Itemlink.
+     Format in 3.3.5a:
+       item:id:enchantId:gem1:gem2:gem3:gem4:suffixId:uniqueId:level      ]]
+function EG:ParseLink(link)
+    if not link then return nil end
+    local id, enchant, g1, g2, g3, g4 =
+        smatch(link, "item:(%d+):(%d*):(%d*):(%d*):(%d*):(%d*)")
+    if not id then return nil end
+    return tonumber(id), tonumber(enchant) or 0,
+           tonumber(g1) or 0, tonumber(g2) or 0, tonumber(g3) or 0, tonumber(g4) or 0
 end
 
 function EG:GetItemIDFromLink(link)
@@ -2699,6 +2812,14 @@ function EG:PrintReport(itemLink)
     end
     if (item.minLevel or 0) > 0 then
         self:Raw(L.REQLEVEL .. ": " .. COLOR.value .. item.minLevel .. COLOR.reset)
+    end
+    if item.enchanted or (item.gemCount or 0) > 0 then
+        local parts = {}
+        if item.enchanted then parts[#parts + 1] = L.ENCHANTED end
+        if (item.gemCount or 0) > 0 then
+            parts[#parts + 1] = sformat(L.GEMMED, item.gemCount)
+        end
+        self:Raw(COLOR.good .. tconcat(parts, ", ") .. COLOR.reset)
     end
     if (item.sellPrice or 0) > 0 and GetCoinTextureString then
         self:Raw(L.SELLPRICE .. ": " .. GetCoinTextureString(item.sellPrice))
