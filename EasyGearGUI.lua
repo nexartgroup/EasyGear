@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.0.2 - Vergleichsfenster  (/eggui)
+    EasyGear 2.0.3 - Vergleichsfenster  (/eggui)
 
     Links:  das abgelegte Item mit allen Berechnungsgrundlagen
     Rechts: das aktuell angelegte Gegenstueck mit derselben Aufschluesselung

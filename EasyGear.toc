@@ -4,7 +4,7 @@
 ## Notes: Gear evaluation, upgrade detection and item comparison for WotLK 3.3.5a
 ## Notes-deDE: Item-Bewertung, Upgrade-Erkennung und Ausruestungsvergleich fuer 3.3.5a
 ## Author: nexartgroup
-## Version: 2.0.2
+## Version: 2.0.3
 ## SavedVariables: EasyGearDB
 ## SavedVariablesPerCharacter: EasyGearCharDB
 ## OptionalDeps: ElvUI, Bagnon

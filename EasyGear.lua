@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.0.2
+    EasyGear 2.0.3
     Gear-Bewertung, Upgrade-Erkennung und Vergleich fuer WoW 3.3.5a (WotLK)
 
     Kompatibilitaet:
@@ -32,7 +32,7 @@
 ------------------------------------------------------------------------------
 
 local ADDON_NAME    = "EasyGear"
-local ADDON_VERSION = "2.0.2"
+local ADDON_VERSION = "2.0.3"
 
 EasyGear = EasyGear or {}
 local EG = EasyGear
@@ -137,7 +137,8 @@ do
         R_EMPTY           = "The slot is empty - anything is an improvement.",
         R_MINDELTA        = "The advantage of %s points is within noise - not counted as an upgrade.",
         NOTE_2H           = "A two-handed weapon replaces main hand and off hand.",
-        NOTE_OFFHAND      = "A two-handed weapon is equipped - the off hand slot is unavailable.",
+        NOTE_OFFHAND      = "A two-handed weapon is equipped and would have to be removed - compared against main hand plus off hand.",
+        NOTE_MH_2H        = "Would replace the equipped two-handed weapon.",
         NOTE_HEIRLOOM_EST = "Heirloom values are read from the tooltip and are approximate.",
         -- GUI
         BTN_CLEAR         = "Clear",
@@ -228,7 +229,8 @@ do
             R_EMPTY           = "Der Slot ist leer - alles ist eine Verbesserung.",
             R_MINDELTA        = "Der Vorsprung liegt unter der Schwelle von %s Punkten - das ist Rauschen.",
             NOTE_2H           = "Eine Zweihandwaffe ersetzt Waffenhand und Schildhand.",
-            NOTE_OFFHAND      = "Es ist eine Zweihandwaffe angelegt - die Schildhand ist belegt.",
+            NOTE_OFFHAND      = "Die angelegte Zweihandwaffe m\195\188sste daf\195\188r abgelegt werden - verglichen wird gegen Waffenhand + Schildhand.",
+            NOTE_MH_2H        = "W\195\188rde die angelegte Zweihandwaffe ersetzen.",
             NOTE_HEIRLOOM_EST = "Erbst\195\188ck-Werte werden aus dem Tooltip gelesen und sind N\195\164herungswerte.",
             BTN_CLEAR         = "Leeren",
             BTN_CHAT          = "In den Chat",
@@ -1105,6 +1107,18 @@ local EQUIP_LOC_SLOTS = {
        mode = "SINGLE"  ein Slot
        mode = "EITHER"  einer von mehreren (Ringe, Schmuck, Einhandwaffen)
        mode = "BOTH"    ersetzt alle genannten Slots (Zweihandwaffe)       ]]
+local OFFHAND_LOCS = {
+    INVTYPE_SHIELD        = true,
+    INVTYPE_HOLDABLE      = true,
+    INVTYPE_WEAPONOFFHAND = true,
+}
+
+-- Fuehrt der Charakter gerade eine Zweihandwaffe?
+function EG:HasTwoHandEquipped()
+    local mh = self:GetEquippedData(16)
+    return (mh and mh.equipLoc == "INVTYPE_2HWEAPON") and true or false
+end
+
 function EG:GetEquipSlots(itemOrLink)
     local item = type(itemOrLink) == "table" and itemOrLink or self:GetItemData(itemOrLink)
     if not item or not item.equipLoc then return nil end
@@ -1117,7 +1131,29 @@ function EG:GetEquipSlots(itemOrLink)
         return { 16, 17 }, "BOTH"
     end
 
+    --[[ Solange eine Zweihandwaffe gefuehrt wird, ist die Schildhand nicht
+         frei verfuegbar - sie wird von der Zweihandwaffe belegt.
+
+         Ein Schild oder Nebenhand-Item anzulegen kostet also die komplette
+         Zweihandwaffe. Verglichen wird deshalb gegen Waffenhand UND
+         Schildhand zusammen, nicht gegen den scheinbar leeren Slot 17.
+         Sonst gilt jedes beliebige Nebenhand-Item als Verbesserung, weil
+         der leere Slot mit 0 Punkten bewertet wird.                       ]]
+    local twoHand = self:HasTwoHandEquipped()
+
+    if OFFHAND_LOCS[loc] then
+        if twoHand then
+            return { 16, 17 }, "BOTH"
+        end
+        return { 17 }, "SINGLE"
+    end
+
     if loc == "INVTYPE_WEAPON" then
+        -- Einhandwaffe: bei gefuehrter Zweihandwaffe geht sie nur in die
+        -- Waffenhand und ersetzt dort die Zweihandwaffe.
+        if twoHand then
+            return { 16 }, "SINGLE"
+        end
         if self:CanDualWield() then
             return { 16, 17 }, "EITHER"
         end
@@ -1381,14 +1417,12 @@ function EG:Compare(itemLink)
     end
 
     -- Hinweise zu Zweihand-/Schildhand-Situationen
-    if mode == "BOTH" then
+    if item.equipLoc == "INVTYPE_2HWEAPON" then
         result.note = L.NOTE_2H
-    elseif item.equipLoc == "INVTYPE_SHIELD" or item.equipLoc == "INVTYPE_HOLDABLE"
-        or item.equipLoc == "INVTYPE_WEAPONOFFHAND" then
-        local mh = self:GetEquippedData(16)
-        if mh and mh.equipLoc == "INVTYPE_2HWEAPON" then
-            result.note = L.NOTE_OFFHAND
-        end
+    elseif OFFHAND_LOCS[item.equipLoc] and mode == "BOTH" then
+        result.note = L.NOTE_OFFHAND
+    elseif item.equipLoc == "INVTYPE_WEAPON" and self:HasTwoHandEquipped() then
+        result.note = L.NOTE_MH_2H
     end
     if item.estimated then
         result.note = (result.note and (result.note .. " ") or "") .. L.NOTE_HEIRLOOM_EST
@@ -2652,7 +2686,11 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 
     if event == "UNIT_INVENTORY_CHANGED" then
         if arg1 == "player" then
+            -- Die Slot-Aufloesung haengt jetzt davon ab, ob eine
+            -- Zweihandwaffe gefuehrt wird - deshalb alle Taschen-Buttons
+            -- ueber die Epoche invalidieren, nicht nur den Score-Cache.
             EG.scoreCache = {}
+            EG.epoch = (EG.epoch or 0) + 1
             EG:Debounce("inv", 0.3, function()
                 EG:RefreshAllBags()
                 if EG.GUI then EG.GUI:Refresh() end

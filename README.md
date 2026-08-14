@@ -106,6 +106,28 @@ Eigene Gewichte pro Charakter sind über `EasyGearCharDB.weights` möglich, z. B
 EasyGearCharDB.weights = { ITEM_MOD_HIT_RATING_SHORT = 2.0 }
 ```
 
+### Waffenhand und Schildhand
+
+Solange eine Zweihandwaffe geführt wird, ist die Schildhand nicht frei — sie wird
+von der Zweihandwaffe belegt. Ein Schild oder Nebenhand-Item anzulegen kostet
+also die komplette Zweihandwaffe. Verglichen wird deshalb gegen **Waffenhand
+plus Schildhand zusammen**, nicht gegen den scheinbar leeren Slot 17; sonst
+gälte jedes beliebige Nebenhand-Item als Verbesserung, weil ein leerer Slot mit
+0 Punkten bewertet wird. Ein Erbstück in der Waffenhand schützt in dieser
+Konstellation also auch gegen Nebenhand-Vorschläge.
+
+Eine Einhandwaffe geht bei geführter Zweihandwaffe nur in die Waffenhand und
+wird auch nur gegen diese gerechnet — beidhändig führen ließe sie sich erst nach
+dem Ablegen des Zweihänders.
+
+| Kandidat | angelegt | verglichen gegen |
+| --- | --- | --- |
+| Schild / Nebenhand | Zweihänder | Waffenhand + Schildhand |
+| Schild / Nebenhand | Einhandwaffe | Schildhand |
+| Einhandwaffe | Zweihänder | Waffenhand |
+| Einhandwaffe | Einhandwaffe + Nebenhand | schwächerer der beiden Slots |
+| Zweihandwaffe | beliebig | Waffenhand + Schildhand |
+
 ---
 
 ## Was sich gegenüber 1.x geändert hat
