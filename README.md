@@ -235,6 +235,25 @@ accountweit und stehen sofort in der Auswahl.
 
 ### Questbelohnungen
 
+Unterstützt werden das Blizzard-Questfenster und **Immersion**. Bei Immersion
+liegen die Belohnungsknöpfe unter
+`ImmersionFrame.TalkBox.Elements.Content.RewardsFrame.Buttons`; erkannt werden
+sie an `type == "choice"`, der Auswahlindex steht in `:GetID()`. Klappt man die
+Großansicht auf, hängt Immersion dieselben Knopfobjekte in den Inspector um —
+das Markierungs-Icon wandert mit, weil es am Knopf hängt.
+
+Gehakt wird `Elements:Display()`, nicht `Elements:ShowRewards()`: Immersion legt
+seine Vorlagen als Liste von Funktionsreferenzen an und ruft sie über
+`elementsTable[i](self)` auf. Diese Referenz zeigt weiter auf die ursprüngliche
+Funktion, ein Hook auf dem Frame würde also nie auslösen. `Display()` dagegen
+wird in `Frame:AddQuestInfo()` als echte Methode aufgerufen.
+
+Die Tooltip-Anzeige hängt an `GameTooltip:SetQuestItem` statt an
+`OnTooltipSetItem`, weil `GetItem()` bei Questbelohnungen keinen verlässlichen
+Link liefert. Das deckt beide Oberflächen ab, da Immersion denselben
+`GameTooltip` benutzt.
+
+
 Gewertet wird nach dem **Zugewinn**, nicht nach der absoluten Wertung. Der
 Unterschied ist erheblich, wenn ein Slot noch leer ist:
 
@@ -306,6 +325,7 @@ dem Ablegen des Zweihänders.
 * Bankfächer werden mitmarkiert; gelbe Markierung für „wäre besser, Stufe reicht noch nicht".
 * Einstellungen in `EasyGearDB` / `EasyGearCharDB` gespeichert.
 * ElvUI-Hook erkennt beide gängigen 3.3.5a-Signaturen von `UpdateSlot`.
+* Unterstützung für Immersion (Questbelohnungen und Tooltips).
 
 ---
 

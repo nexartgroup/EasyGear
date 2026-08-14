@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.3.1
+    EasyGear 2.4.0
     Gear-Bewertung, Upgrade-Erkennung und Vergleich fuer WoW 3.3.5a (WotLK)
 
     Kompatibilitaet:
@@ -32,7 +32,7 @@
 ------------------------------------------------------------------------------
 
 local ADDON_NAME    = "EasyGear"
-local ADDON_VERSION = "2.3.1"
+local ADDON_VERSION = "2.4.0"
 
 EasyGear = EasyGear or {}
 local EG = EasyGear
@@ -216,6 +216,7 @@ do
         -- Integrationen
         HOOK_ELVUI        = "ElvUI bag support enabled.",
         HOOK_BAGNON       = "Bagnon bag support enabled.",
+        HOOK_IMMERSION    = "Immersion quest support enabled.",
     }
 
     if GetLocale() == "deDE" then
@@ -336,6 +337,7 @@ do
             EGUP_CLEAN_DONE   = "EGUPCLEAN abgeschlossen - %d Item(s) entfernt.",
             HOOK_ELVUI        = "ElvUI-Taschenunterst\195\188tzung aktiviert.",
             HOOK_BAGNON       = "Bagnon-Taschenunterst\195\188tzung aktiviert.",
+            HOOK_IMMERSION    = "Immersion-Questunterst\195\188tzung aktiviert.",
         }
         for k, v in pairs(de) do strings[k] = v end
     end
@@ -1947,7 +1949,7 @@ end
 ------------------------------------------------------------------------------
 
 EG.hooks = { default = false, elvui = false, bagnon = false, quest = false,
-             bank = false, tooltip = false }
+             bank = false, tooltip = false, immersion = false }
 
 function EG:CreateUpgradeIcon(button)
     if button.EGIcon then return button.EGIcon end
@@ -2278,17 +2280,73 @@ function EG:CreateQuestIcon(button)
     return icon
 end
 
+--[[ Immersion ersetzt das komplette Questfenster durch eine eigene
+     Oberflaeche. Die Belohnungsknoepfe liegen dort unter
+       ImmersionFrame.TalkBox.Elements.Content.RewardsFrame.Buttons
+     und tragen .type == "choice" sowie den Auswahlindex in :GetID().
+     Beim Aufklappen der Grossansicht werden dieselben Knopfobjekte in den
+     Inspector umgehaengt - da das Icon am Knopf haengt, wandert es mit.  ]]
+function EG:GetImmersionFrames()
+    local frame = _G.ImmersionFrame
+    if not frame then return nil end
+    local talkbox = frame.TalkBox
+    local elements = talkbox and talkbox.Elements
+    local rewards = elements and elements.Content and elements.Content.RewardsFrame
+    return frame, elements, rewards
+end
+
+--[[ Liefert eine Zuordnung Auswahlindex -> Knopf fuer die gerade
+     sichtbare Oberflaeche.                                               ]]
+function EG:GetQuestRewardButtons()
+    local buttons, source = {}, nil
+
+    local frame, _, rewards = self:GetImmersionFrames()
+    if frame and frame:IsShown() and rewards and rewards.Buttons then
+        for _, b in ipairs(rewards.Buttons) do
+            if b and b.type == "choice" and b.GetID and b:IsShown() then
+                local id = b:GetID()
+                if id and id > 0 then
+                    buttons[id] = b
+                    source = "IMMERSION"
+                end
+            end
+        end
+    end
+
+    if not source then
+        for i = 1, 10 do
+            local b = _G["QuestInfoItem" .. i]
+            if b then buttons[i] = b end
+        end
+        source = "BLIZZARD"
+    end
+
+    return buttons, source
+end
+
+-- Alle bekannten Knoepfe zuruecksetzen, egal welche Oberflaeche aktiv ist
+function EG:ClearQuestIcons()
+    for i = 1, 10 do
+        local b = _G["QuestInfoItem" .. i]
+        if b and b.EGQuestIcon then b.EGQuestIcon:Hide() end
+    end
+    local _, _, rewards = self:GetImmersionFrames()
+    if rewards and rewards.Buttons then
+        for _, b in ipairs(rewards.Buttons) do
+            if b and b.EGQuestIcon then b.EGQuestIcon:Hide() end
+        end
+    end
+end
+
 function EG:UpdateQuestRewards()
     if not (self.db and self.db.showQuestIcons) then return end
 
-    local numChoices = GetNumQuestChoices and GetNumQuestChoices() or 0
-    if not numChoices or numChoices <= 0 then return end
+    self:ClearQuestIcons()
 
-    for i = 1, numChoices do
-        local button = _G["QuestInfoItem" .. i]
-        if button then
-            self:CreateQuestIcon(button):Hide()
-        end
+    local numChoices = GetNumQuestChoices and GetNumQuestChoices() or 0
+    if not numChoices or numChoices <= 0 then
+        self.selectedQuestReward = nil
+        return
     end
 
     local best, score, isUpgrade, value, mode, delta = self:GetBestQuestReward()
@@ -2303,7 +2361,8 @@ function EG:UpdateQuestRewards()
         value = value, isUpgrade = isUpgrade, mode = mode,
     }
 
-    local button = _G["QuestInfoItem" .. best]
+    local buttons = self:GetQuestRewardButtons()
+    local button = buttons[best]
     if not button then return end
 
     local icon = self:CreateQuestIcon(button)
@@ -2315,6 +2374,36 @@ function EG:UpdateQuestRewards()
         icon:SetVertexColor(1, 1, 1)
     end
     icon:Show()
+end
+
+function EG:HookImmersion()
+    if self.hooks.immersion then return end
+
+    local frame, elements = self:GetImmersionFrames()
+    if not frame or not elements or type(elements.Display) ~= "function" then
+        return false
+    end
+
+    --[[ Gehakt wird Elements:Display(), nicht Elements:ShowRewards().
+
+         Immersion legt seine Vorlagen als Liste von Funktionsreferenzen an
+         (TEMPLATE.QUEST_DETAIL.elements enthaelt Elements.ShowRewards
+         direkt) und ruft sie ueber elementsTable[i](self) auf. Diese
+         Referenz zeigt weiterhin auf die urspruengliche Funktion, ein Hook
+         auf dem Frame wuerde also nie ausloesen. Display() dagegen wird in
+         Frame:AddQuestInfo() als echte Methode aufgerufen und arbeitet die
+         Vorlage ab - der Hook greift dort zuverlaessig.                  ]]
+    hooksecurefunc(elements, "Display", function()
+        EG:Debounce("questimm", 0.05, function()
+            EG:UpdateQuestRewards()
+            -- zweiter Durchlauf, weil Itemdaten nachladen koennen
+            EG:After(0.6, function() EG:UpdateQuestRewards() end)
+        end)
+    end)
+
+    self.hooks.immersion = true
+    self:Print(L.HOOK_IMMERSION)
+    return true
 end
 
 function EG:HookQuestRewards()
@@ -2335,11 +2424,15 @@ end
 -- 14  Tooltip-Integration
 ------------------------------------------------------------------------------
 
-local function AddTooltipInfo(tooltip)
+local function AddTooltipInfo(tooltip, forcedLink)
     if not (EG.db and EG.db.showTooltip) then return end
     if tooltip.EGDone then return end
 
-    local _, link = tooltip:GetItem()
+    local link = forcedLink
+    if not link then
+        local _
+        _, link = tooltip:GetItem()
+    end
     if not link then return end
 
     local item = EG:GetItemData(link)
@@ -2393,6 +2486,7 @@ end
 
 function EG:HookTooltips()
     if self.hooks.tooltip then return end
+
     for _, tip in ipairs({ GameTooltip, ItemRefTooltip, ShoppingTooltip1, ShoppingTooltip2 }) do
         if tip then
             tip:HookScript("OnTooltipSetItem", AddTooltipInfo)
@@ -2400,6 +2494,20 @@ function EG:HookTooltips()
             tip:HookScript("OnHide", function(self_) self_.EGDone = nil end)
         end
     end
+
+    --[[ Questbelohnungen werden ueber SetQuestItem angezeigt, nicht ueber
+         SetHyperlink - GetItem() liefert dabei nicht zuverlaessig einen
+         Link. Deshalb wird der Link hier direkt uebergeben. Das gilt fuer
+         das Blizzard-Questfenster ebenso wie fuer Immersion, das denselben
+         GameTooltip benutzt.                                             ]]
+    if GameTooltip.SetQuestItem then
+        hooksecurefunc(GameTooltip, "SetQuestItem", function(tip, itemType, index)
+            if not GetQuestItemLink then return end
+            local link = GetQuestItemLink(itemType, index)
+            if link then AddTooltipInfo(tip, link) end
+        end)
+    end
+
     self.hooks.tooltip = true
 end
 
@@ -3189,6 +3297,13 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         EG:HookBank()
 
         EG:HookQuestRewards()
+        if IsAddOnLoaded("Immersion") then
+            -- Immersion baut seine Frames beim Laden auf; falls es noch
+            -- nicht so weit ist, spaeter erneut versuchen
+            if not EG:HookImmersion() then
+                EG:After(2, function() EG:HookImmersion() end)
+            end
+        end
         EG:HookTooltips()
 
         if EG.GUI and EG.GUI.OnInit then EG.GUI:OnInit() end
