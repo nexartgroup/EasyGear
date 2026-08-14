@@ -250,8 +250,20 @@ wird in `Frame:AddQuestInfo()` als echte Methode aufgerufen.
 
 Die Tooltip-Anzeige hängt an `GameTooltip:SetQuestItem` statt an
 `OnTooltipSetItem`, weil `GetItem()` bei Questbelohnungen keinen verlässlichen
-Link liefert. Das deckt beide Oberflächen ab, da Immersion denselben
-`GameTooltip` benutzt.
+Link liefert. Das deckt das Sprechfenster beider Oberflächen ab, da Immersion
+dort denselben `GameTooltip` benutzt.
+
+**Großansicht (Shift).** Der Shift-Modus zeigt die Belohnungen nicht über die
+Knöpfe, sondern über gepoolte Tooltip-Frames (`ImmersionItemTooltipTemplate`),
+die in `Frame:SetItemTooltip()` befüllt werden — eigene Frame-Objekte, auf die
+der `GameTooltip`-Hook nicht greift. Gehakt wird deshalb `SetItemTooltip` am
+`ImmersionFrame`; Immersion hängt seine Methoden per `L.Mixin(L.frame, Frame)`
+direkt ans Frame und ruft sie als echte Methode auf. Die empfohlene Belohnung
+bekommt dort ein Häkchen und eine zusätzliche Zeile.
+
+Da die Frames aus einem Pool stammen und wiederverwendet werden, setzt EasyGear
+seinen Merker und das Häkchen bei jedem Befüllen neu — sonst bliebe die
+Empfehlung der vorherigen Quest stehen.
 
 
 Gewertet wird nach dem **Zugewinn**, nicht nach der absoluten Wertung. Der

@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.4.0
+    EasyGear 2.4.1
     Gear-Bewertung, Upgrade-Erkennung und Vergleich fuer WoW 3.3.5a (WotLK)
 
     Kompatibilitaet:
@@ -32,7 +32,7 @@
 ------------------------------------------------------------------------------
 
 local ADDON_NAME    = "EasyGear"
-local ADDON_VERSION = "2.4.0"
+local ADDON_VERSION = "2.4.1"
 
 EasyGear = EasyGear or {}
 local EG = EasyGear
@@ -217,6 +217,7 @@ do
         HOOK_ELVUI        = "ElvUI bag support enabled.",
         HOOK_BAGNON       = "Bagnon bag support enabled.",
         HOOK_IMMERSION    = "Immersion quest support enabled.",
+        QUEST_PICK        = "EasyGear recommendation",
     }
 
     if GetLocale() == "deDE" then
@@ -338,6 +339,7 @@ do
             HOOK_ELVUI        = "ElvUI-Taschenunterst\195\188tzung aktiviert.",
             HOOK_BAGNON       = "Bagnon-Taschenunterst\195\188tzung aktiviert.",
             HOOK_IMMERSION    = "Immersion-Questunterst\195\188tzung aktiviert.",
+            QUEST_PICK        = "EasyGear-Empfehlung",
         }
         for k, v in pairs(de) do strings[k] = v end
     end
@@ -2338,28 +2340,26 @@ function EG:ClearQuestIcons()
     end
 end
 
+--[[ Die Auswahl wird immer berechnet, auch wenn die Icons abgeschaltet
+     sind - die Grossansicht von Immersion braucht sie fuer ihre
+     Empfehlungszeile.                                                    ]]
 function EG:UpdateQuestRewards()
-    if not (self.db and self.db.showQuestIcons) then return end
-
+    self.selectedQuestReward = nil
     self:ClearQuestIcons()
 
     local numChoices = GetNumQuestChoices and GetNumQuestChoices() or 0
-    if not numChoices or numChoices <= 0 then
-        self.selectedQuestReward = nil
-        return
-    end
+    if not numChoices or numChoices <= 0 then return end
 
     local best, score, isUpgrade, value, mode, delta = self:GetBestQuestReward()
-    if not best then
-        self.selectedQuestReward = nil
-        return
-    end
+    if not best then return end
 
     local link = self:GetQuestRewardLink(best)
     self.selectedQuestReward = {
         index = best, link = link, score = score, delta = delta,
         value = value, isUpgrade = isUpgrade, mode = mode,
     }
+
+    if not (self.db and self.db.showQuestIcons) then return end
 
     local buttons = self:GetQuestRewardButtons()
     local button = buttons[best]
@@ -2400,6 +2400,9 @@ function EG:HookImmersion()
             EG:After(0.6, function() EG:UpdateQuestRewards() end)
         end)
     end)
+
+    -- Grossansicht (Shift) mitnehmen
+    self:HookImmersionInspector()
 
     self.hooks.immersion = true
     self:Print(L.HOOK_IMMERSION)
@@ -2482,6 +2485,78 @@ local function AddTooltipInfo(tooltip, forcedLink)
     end
 
     tooltip:Show()
+end
+
+--[[--------------------------------------------------------------------
+     Immersion: Grossansicht (Shift)
+
+     Der Shift-Modus zeigt die Belohnungen nicht ueber die Knoepfe aus dem
+     Sprechfenster, sondern ueber gepoolte Tooltip-Frames
+     (ImmersionItemTooltipTemplate), die in Frame:SetItemTooltip() mit
+     tooltip:SetQuestItem(...) befuellt werden. Das sind eigene
+     Frame-Objekte, der Hook auf GameTooltip greift dort also nicht.
+
+     Gehakt wird deshalb Frame:SetItemTooltip auf dem ImmersionFrame -
+     Logic/Frame.lua haengt seine Methoden per L.Mixin(L.frame, Frame)
+     direkt an das Frame, und der Aufruf erfolgt als echte Methode.
+----------------------------------------------------------------------]]
+function EG:MarkImmersionTooltip(tooltip, recommended)
+    if not tooltip.EGPickIcon then
+        local anchor = tooltip.Icon or tooltip
+        local icon = tooltip:CreateTexture(nil, "OVERLAY")
+        icon:SetTexture(TEX_UPGRADE)
+        icon:SetVertexColor(0, 1, 0)
+        local size = tonumber(self.db and self.db.iconSize) or DEFAULTS.iconSize
+        icon:SetWidth(size)
+        icon:SetHeight(size)
+        icon:SetPoint("CENTER", anchor, "BOTTOMLEFT", 6, 6)
+        tooltip.EGPickIcon = icon
+    end
+    if recommended then
+        tooltip.EGPickIcon:Show()
+    else
+        tooltip.EGPickIcon:Hide()
+    end
+end
+
+function EG:DecorateImmersionTooltip(tooltip, item)
+    if not tooltip or not item then return end
+    if not (self.db and self.db.showTooltip) then return end
+    if item.objectType and item.objectType ~= "item" then return end
+
+    local itemType = item.type
+    local index    = item.GetID and item:GetID()
+    if not itemType or not index or not GetQuestItemLink then return end
+
+    local link = GetQuestItemLink(itemType, index)
+    if not link then return end
+
+    -- Die Frames kommen aus einem Pool und werden wiederverwendet,
+    -- deshalb den Merker vor jedem Befuellen zuruecksetzen.
+    tooltip.EGDone = nil
+    AddTooltipInfo(tooltip, link)
+
+    local recommended = false
+    if itemType == "choice" then
+        if not self.selectedQuestReward then self:UpdateQuestRewards() end
+        local sel = self.selectedQuestReward
+        recommended = (sel and sel.index == index) and true or false
+        if recommended then
+            tooltip:AddLine(COLOR.good .. L.QUEST_PICK .. COLOR.reset)
+            tooltip:Show()
+        end
+    end
+    self:MarkImmersionTooltip(tooltip, recommended)
+end
+
+function EG:HookImmersionInspector()
+    local frame = self:GetImmersionFrames()
+    if not frame or type(frame.SetItemTooltip) ~= "function" then return false end
+
+    hooksecurefunc(frame, "SetItemTooltip", function(_, tooltip, item)
+        EG:DecorateImmersionTooltip(tooltip, item)
+    end)
+    return true
 end
 
 function EG:HookTooltips()
