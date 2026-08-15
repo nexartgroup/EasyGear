@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.4.1 - Profilvergleich  (/egprofile)
+    EasyGear 2.6.0 - Profilvergleich  (/egprofile)
 
     Aufbau wie der Item-Vergleich:
 

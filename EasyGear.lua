@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.4.1
+    EasyGear 2.6.0
     Gear-Bewertung, Upgrade-Erkennung und Vergleich fuer WoW 3.3.5a (WotLK)
 
     Kompatibilitaet:
@@ -32,7 +32,7 @@
 ------------------------------------------------------------------------------
 
 local ADDON_NAME    = "EasyGear"
-local ADDON_VERSION = "2.4.1"
+local ADDON_VERSION = "2.6.0"
 
 EasyGear = EasyGear or {}
 local EG = EasyGear
@@ -133,6 +133,8 @@ do
         PROTECTED         = "protected",
         -- Begruendungen
         R_HEIRLOOM        = "An equipped heirloom is treated as best in slot below level %d.",
+        R_HEIRLOOM_WINS   = "A heirloom replaces a normal item - it scales with your level.",
+        R_HEIRLOOM_VS     = "Heirloom against heirloom - ranked by score.",
         R_LOWER           = "The equipped item has a higher score.",
         R_EQUAL           = "Same score as the equipped item.",
         R_CLASS           = "Not usable by your class or armor proficiency.",
@@ -201,6 +203,13 @@ do
         SET_ILVLSCALE     = "Item level base scales with character level: %s (currently x%s)",
         -- EGUP
         EGUP_NO_TARGET    = "Target a player first.",
+        EGUP_VERIFY_HEAD  = "Heirloom check",
+        EGUP_VERIFY_MISSING = "not in the client cache",
+        EGUP_VERIFY_QUALITY = "quality %s, expected heirloom",
+        EGUP_VERIFY_SLOT  = "slot %s, expected %s",
+        EGUP_VERIFY_SUM   = "OK / suspicious / missing:",
+        EGUP_VERIFY_HINT  = "Missing entries are usually uncached - open the item once, or the ID differs on this server. Correct it in EasyGearHeirlooms.lua.",
+        EGUP_PACKAGE_HEAD = "Package",
         EGUP_NOT_PLAYER   = "The target is not a player.",
         EGUP_NO_CLASS     = "Could not determine the target's class.",
         EGUP_NO_PACKAGE   = "No package configured for %s.",
@@ -260,6 +269,8 @@ do
             HEIRLOOM          = "Erbst\195\188ck",
             PROTECTED         = "gesch\195\188tzt",
             R_HEIRLOOM        = "Ein angelegtes Erbst\195\188ck gilt unterhalb von Stufe %d als bestes Item des Slots.",
+            R_HEIRLOOM_WINS   = "Ein Erbst\195\188ck ersetzt ein normales Item - es w\195\164chst mit deiner Stufe mit.",
+            R_HEIRLOOM_VS     = "Erbst\195\188ck gegen Erbst\195\188ck - hier entscheidet die Wertung.",
             R_LOWER           = "Das angelegte Item hat die h\195\182here Wertung.",
             R_EQUAL           = "Gleiche Wertung wie das angelegte Item.",
             R_CLASS           = "F\195\188r deine Klasse bzw. R\195\188stungsklasse nicht verwendbar.",
@@ -324,6 +335,13 @@ do
             SET_MINDELTA      = "Mindestdifferenz: %s Punkte (+ %s%% relativ)",
             SET_ILVLSCALE     = "Basis Gegenstandsstufe skaliert mit Charakterstufe: %s (aktuell x%s)",
             EGUP_NO_TARGET    = "Bitte zuerst einen Spieler anvisieren.",
+            EGUP_VERIFY_HEAD  = "Erbst\195\188ckpr\195\188fung",
+            EGUP_VERIFY_MISSING = "nicht im Client-Cache",
+            EGUP_VERIFY_QUALITY = "Qualit\195\164t %s, erwartet Erbst\195\188ck",
+            EGUP_VERIFY_SLOT  = "Slot %s, erwartet %s",
+            EGUP_VERIFY_SUM   = "OK / auff\195\164llig / fehlend:",
+            EGUP_VERIFY_HINT  = "Fehlende Eintr\195\164ge sind meist nur ungecacht - Item einmal ansehen. Sonst weicht die ID auf diesem Server ab und geh\195\182rt in EasyGearHeirlooms.lua korrigiert.",
+            EGUP_PACKAGE_HEAD = "Paket",
             EGUP_NOT_PLAYER   = "Das Ziel ist kein Spieler.",
             EGUP_NO_CLASS     = "Die Klasse des Ziels konnte nicht ermittelt werden.",
             EGUP_NO_PACKAGE   = "Kein Paket f\195\188r %s konfiguriert.",
@@ -1798,11 +1816,21 @@ function EG:IsItemLevelTooHigh(link)
     return (item.minLevel or 0) > (UnitLevel("player") or 1)
 end
 
-function EG:IsHeirloom(item)
-    if not item then return false end
+-- Ist das Item ein Erbstueck? (reine Qualitaetspruefung)
+function EG:IsHeirloomItem(item)
+    return (item and item.quality == HEIRLOOM_QUALITY) and true or false
+end
+
+-- Gilt die Erbstueckregel gerade? Ab Stufe 80 skalieren sie nicht mehr.
+function EG:HeirloomProtectionActive()
     if not (self.db and self.db.protectHeirlooms) then return false end
     if (UnitLevel("player") or 1) >= HEIRLOOM_MAX_LEVEL then return false end
-    return item.quality == HEIRLOOM_QUALITY
+    return true
+end
+
+-- Alte API: Erbstueck UND Regel aktiv
+function EG:IsHeirloom(item)
+    return self:IsHeirloomItem(item) and self:HeirloomProtectionActive()
 end
 
 ------------------------------------------------------------------------------
@@ -1852,7 +1880,7 @@ function EG:Compare(itemLink)
             local entry = {
                 item = eq, link = link, slotID = slotID,
                 score = sc, breakdown = bd,
-                isHeirloom = self:IsHeirloom(eq),
+                isHeirloom = self:IsHeirloomItem(eq),
             }
             if entry.isHeirloom then anyHeirloom = true end
             result.equipped[#result.equipped + 1] = entry
@@ -1876,8 +1904,30 @@ function EG:Compare(itemLink)
         result.note = (result.note and (result.note .. " ") or "") .. L.NOTE_HEIRLOOM_EST
     end
 
-    -- Erbstueck-Schutz
-    if anyHeirloom then
+    --[[--------------------------------------------------------------
+         Erbstuecke
+
+         Erbstuecke wachsen mit der Charakterstufe und geben Erfahrung
+         dazu; ein normales Item der Levelphase kann dagegen nicht
+         anhalten. Deshalb gelten drei Regeln:
+
+           normales Item  gegen Erbstueck  ->  verliert immer
+           Erbstueck      gegen normal     ->  gewinnt immer
+           Erbstueck      gegen Erbstueck  ->  ganz normal nach Punkten
+
+         Wichtig ist die Slot-Genauigkeit: liegt in Ring 1 ein Erbstueck
+         und in Ring 2 ein normaler Ring, wird ein besserer normaler Ring
+         weiterhin fuer Ring 2 empfohlen. Blockiert wird nur, wenn alle
+         infrage kommenden Plaetze von Erbstuecken belegt sind.
+
+         Ab Stufe 80 skalieren Erbstuecke nicht mehr, dort greift die
+         Regel nicht (und laesst sich mit /eg heirloom ganz abschalten).
+    ----------------------------------------------------------------]]
+    local candidateHL = self:IsHeirloomItem(item)
+    local protect     = self:HeirloomProtectionActive()
+    local forced      = false
+
+    local function SetProtected()
         result.protected   = true
         result.targetScore = mhuge
         result.delta       = -mhuge
@@ -1886,27 +1936,60 @@ function EG:Compare(itemLink)
         for _, e in ipairs(result.equipped) do
             if e.isHeirloom then result.target = e break end
         end
-        return result
     end
 
-    -- Vergleichsziel bestimmen
+    -- Plaetze ohne Erbstueck
+    local function FreeSlots()
+        local free = {}
+        for _, e in ipairs(result.equipped) do
+            if not e.isHeirloom then free[#free + 1] = e end
+        end
+        return free
+    end
+
     if mode == "BOTH" then
-        -- Zweihandwaffe: gegen die Summe aus Waffenhand + Schildhand
+        -- Zweihandwaffe: beide Haende zusammen
+        if protect and not candidateHL and anyHeirloom then
+            SetProtected()
+            return result
+        end
+
         local sum = 0
         for _, e in ipairs(result.equipped) do sum = sum + (e.score or 0) end
         result.targetScore = sum
         result.target      = result.equipped[1]
         result.combined    = true
+
+        if protect and candidateHL and not anyHeirloom then forced = true end
     else
-        -- Einer von mehreren Slots: gegen den schwaechsten
+        local pool = result.equipped
+
+        if protect and not candidateHL then
+            pool = FreeSlots()
+            if #pool == 0 then
+                SetProtected()
+                return result
+            end
+        elseif protect and candidateHL then
+            local free = FreeSlots()
+            if #free > 0 then
+                -- Ein Erbstueck ersetzt zuerst das normale Item
+                pool   = free
+                forced = true
+            end
+            -- sonst: Erbstueck gegen Erbstueck, normal weiterrechnen
+        end
+
         local worst, worstScore = nil, mhuge
-        for _, e in ipairs(result.equipped) do
+        for _, e in ipairs(pool) do
             local sc = e.empty and 0 or (e.score or 0)
             if sc < worstScore then worstScore, worst = sc, e end
         end
         result.target      = worst
         result.targetScore = (worstScore == mhuge) and 0 or worstScore
     end
+
+    result.forced = forced
 
     result.delta = result.score - result.targetScore
 
@@ -1919,12 +2002,16 @@ function EG:Compare(itemLink)
     local threshold = mmax(minDelta, relative)
     result.threshold = threshold
 
-    result.isUpgrade = (usable == true) and (result.delta > 0)
-        and (result.delta >= threshold)
+    result.isUpgrade = (usable == true)
+        and (forced or (result.delta > 0 and result.delta >= threshold))
 
     if not result.reason then
         if usable ~= true then
             -- reason wurde bereits von CanUseItem gesetzt
+        elseif forced then
+            result.reason = L.R_HEIRLOOM_WINS
+        elseif candidateHL and protect then
+            result.reason = L.R_HEIRLOOM_VS
         elseif result.target and result.target.empty then
             result.reason = L.R_EMPTY
         elseif result.delta > 0 and result.delta < threshold then
@@ -2477,7 +2564,13 @@ local function AddTooltipInfo(tooltip, forcedLink)
 
     local delta = result.delta or 0
     if result.isUpgrade then
-        tooltip:AddLine(COLOR.good .. L.UPGRADE .. "  +" .. FmtScore(delta) .. COLOR.reset)
+        -- Bei einem Erbstueck gegen ein normales Item kann die Differenz
+        -- negativ sein und es trotzdem die Empfehlung sein.
+        local sign = (delta > 0) and "+" or ""
+        tooltip:AddLine(COLOR.good .. L.UPGRADE .. "  " .. sign .. FmtScore(delta) .. COLOR.reset)
+        if result.forced and result.reason then
+            tooltip:AddLine(COLOR.grey .. result.reason .. COLOR.reset, nil, nil, nil, true)
+        end
     elseif delta > 0 then
         tooltip:AddLine(COLOR.warn .. L.NO_UPGRADE .. "  +" .. FmtScore(delta) .. COLOR.reset)
     else
@@ -2590,107 +2683,146 @@ end
 -- 15  EGUP - Klassenpaket (GM) und Aufraeumen
 ------------------------------------------------------------------------------
 
-local EGUP_BAG_ITEM_ID = 51809   -- Tragbares Loch
-local EGUP_BAG_COUNT   = 4
+--[[ Die Erbstueckdaten stehen in EasyGearHeirlooms.lua:
+       EG.HEIRLOOMS           Stammdaten je Item-ID
+       EG.HEIRLOOM_UNIVERSAL  Ring und Taschen fuer jede Klasse
+       EG.HEIRLOOM_PACKAGES   Zuordnung je Klasse                          ]]
 
-local EGUP_ITEMS = {
-    TRINKETS = {
-        { id = 42991, count = 2, name = "Swift Hand of Justice" },
-        { id = 42992, count = 2, name = "Discerning Eye of the Beast" },
-    },
-    RING = { id = 50255, count = 1, name = "Dread Pirate Ring" },
-    BAGS = {
-        { id = EGUP_BAG_ITEM_ID, count = EGUP_BAG_COUNT, name = "Portable Hole" },
-    },
-    CLOTH = {
-        CHEST     = { id = 48691, count = 1, name = "Tattered Dreadmist Robe" },
-        SHOULDERS = { id = 42985, count = 1, name = "Tattered Dreadmist Mantle" },
-        WEAPON    = { id = 42947, count = 1, name = "Dignified Headmaster's Charge" },
-    },
-    LEATHER_AGI = {
-        CHEST          = { id = 48689, count = 1, name = "Stained Shadowcraft Tunic" },
-        SHOULDERS      = { id = 42952, count = 1, name = "Stained Shadowcraft Spaulders" },
-        DAGGER         = { id = 42944, count = 1, name = "Balanced Heartseeker" },
-        SWORD          = { id = 42945, count = 1, name = "Venerable Dal'Rend's Sacred Charge" },
-        THRASH_BLADE   = { id = 44096, count = 1, name = "Battleworn Thrash Blade" },
-        OFFHAND_DAGGER = { id = 44091, count = 1, name = "Sharpened Scarlet Kris" },
-    },
-    LEATHER_INT = {
-        CHEST     = { id = 48687, count = 1, name = "Preened Ironfeather Breastplate" },
-        SHOULDERS = { id = 42984, count = 1, name = "Preened Ironfeather Shoulders" },
-        WEAPON    = { id = 42947, count = 1, name = "Dignified Headmaster's Charge" },
-    },
-    MAIL_AGI = {
-        CHEST     = { id = 48677, count = 1, name = "Champion's Deathdealer Breastplate" },
-        SHOULDERS = { id = 42950, count = 1, name = "Champion Herod's Shoulder" },
-        MACE      = { id = 48716, count = 1, name = "Venerable Mass of McGowan" },
-        BOW       = { id = 42946, count = 1, name = "Charmed Ancient Bone Bow" },
-    },
-    MAIL_INT = {
-        CHEST     = { id = 48683, count = 1, name = "Mystical Vest of Elements" },
-        SHOULDERS = { id = 42951, count = 1, name = "Mystical Pauldrons of Elements" },
-        WEAPON    = { id = 42948, count = 1, name = "Devout Aurastone Hammer" },
-    },
-    PLATE = {
-        CHEST     = { id = 48685, count = 1, name = "Polished Breastplate of Valor" },
-        SHOULDERS = { id = 42949, count = 1, name = "Polished Spaulders of Valor" },
-        WEAPON    = { id = 44092, count = 1, name = "Reforged Truesilver Champion" },
-    },
-}
-EG.EGUP_ITEMS = EGUP_ITEMS
-
--- Klasse -> Liste der Pfade in EGUP_ITEMS
-local EGUP_PACKAGES = {
-    ROGUE       = { "LEATHER_AGI.CHEST", "LEATHER_AGI.SHOULDERS", "LEATHER_AGI.DAGGER",
-                    "LEATHER_AGI.SWORD", "LEATHER_AGI.THRASH_BLADE",
-                    "LEATHER_AGI.OFFHAND_DAGGER" },
-    DRUID       = { "LEATHER_INT.CHEST", "LEATHER_INT.SHOULDERS", "LEATHER_INT.WEAPON",
-                    "LEATHER_AGI.CHEST", "LEATHER_AGI.SHOULDERS" },
-    HUNTER      = { "MAIL_AGI.CHEST", "MAIL_AGI.SHOULDERS", "MAIL_AGI.BOW",
-                    "LEATHER_AGI.SWORD" },
-    SHAMAN      = { "MAIL_AGI.CHEST", "MAIL_AGI.SHOULDERS", "MAIL_AGI.MACE",
-                    "MAIL_INT.CHEST", "MAIL_INT.SHOULDERS", "MAIL_INT.WEAPON" },
-    WARRIOR     = { "PLATE.CHEST", "PLATE.SHOULDERS", "PLATE.WEAPON",
-                    "LEATHER_AGI.SWORD", "MAIL_AGI.MACE" },
-    PALADIN     = { "PLATE.CHEST", "PLATE.SHOULDERS", "PLATE.WEAPON", "MAIL_INT.WEAPON" },
-    DEATHKNIGHT = { "PLATE.CHEST", "PLATE.SHOULDERS", "PLATE.WEAPON",
-                    "LEATHER_AGI.SWORD" },
-    PRIEST      = { "CLOTH.CHEST", "CLOTH.SHOULDERS", "CLOTH.WEAPON" },
-    MAGE        = { "CLOTH.CHEST", "CLOTH.SHOULDERS", "CLOTH.WEAPON" },
-    WARLOCK     = { "CLOTH.CHEST", "CLOTH.SHOULDERS", "CLOTH.WEAPON" },
-}
-
-local function ResolvePath(path)
-    local node = EGUP_ITEMS
-    for part in string.gmatch(path, "[^%.]+") do
-        node = node and node[part]
-    end
-    return node
+function EG:GetHeirloomInfo(id)
+    return self.HEIRLOOMS and self.HEIRLOOMS[id] or nil
 end
 
-function EG:GetEGUPPackage(class)
+-- Angezeigter Name: bevorzugt der lokalisierte aus dem Client
+function EG:GetHeirloomName(id)
+    local name = GetItemInfo(id)
+    if name then return name end
+    local info = self:GetHeirloomInfo(id)
+    return (info and info.en) or ("Item " .. tostring(id))
+end
+
+--[[ Baut das Paket fuer eine Klasse.
+     Rueckgabe: Liste aus { id, count, name }                              ]]
+--[[ faction: "Alliance" oder "Horde". Die beiden PvP-Insignien sind
+     fraktionsgebunden; ohne Angabe werden beide mitgegeben.              ]]
+function EG:GetEGUPPackage(class, faction)
     local package, seen = {}, {}
 
     local function Add(entry)
         if not entry or not entry.id then return end
-        if seen[entry.id] then return end
-        seen[entry.id] = true
+        local id = entry.id
+
+        local info = self:GetHeirloomInfo(id)
+        if info and info.faction and faction and info.faction ~= faction then
+            return   -- gehoert der anderen Fraktion
+        end
+        if seen[id] then
+            -- gleiche ID zweimal gelistet: hoechste Menge gewinnt
+            local rec = package[seen[id]]
+            rec.count = mmax(rec.count, entry.count or 1)
+            return
+        end
         package[#package + 1] = {
-            id = entry.id, count = entry.count or 1,
-            name = entry.name or ("Item " .. tostring(entry.id)),
+            id = id, count = entry.count or 1, name = self:GetHeirloomName(id),
         }
+        seen[id] = #package
     end
 
-    for _, t in ipairs(EGUP_ITEMS.TRINKETS) do Add(t) end
-    Add(EGUP_ITEMS.RING)
-    for _, b in ipairs(EGUP_ITEMS.BAGS) do Add(b) end
+    for _, entry in ipairs(self.HEIRLOOM_UNIVERSAL or {}) do Add(entry) end
 
-    local list = EGUP_PACKAGES[class or ""]
+    local list = self.HEIRLOOM_PACKAGES and self.HEIRLOOM_PACKAGES[class or ""]
     if list then
-        for _, path in ipairs(list) do Add(ResolvePath(path)) end
+        for _, entry in ipairs(list) do Add(entry) end
     end
 
     return package
+end
+
+--[[ Prueft alle hinterlegten IDs gegen den Client-Cache.
+
+     Eine falsche ID faellt bei ".additem" sonst nicht auf: der Server
+     meldet den Fehler, der Spieler bekommt nichts, und im Paket sieht
+     alles richtig aus. Geprueft wird deshalb, ob das Item existiert, ob
+     es Erbstueckqualitaet hat und welchen Slot es tatsaechlich belegt.  ]]
+function EG:VerifyHeirlooms(classFilter)
+    if not self.HEIRLOOMS then
+        self:Print(COLOR.bad .. "EasyGearHeirlooms.lua nicht geladen." .. COLOR.reset)
+        return
+    end
+
+    local ids = {}
+    if classFilter then
+        for _, e in ipairs(self:GetEGUPPackage(classFilter)) do ids[#ids + 1] = e.id end
+    else
+        for id in pairs(self.HEIRLOOMS) do ids[#ids + 1] = id end
+        tsort(ids)
+    end
+
+    self:Raw(COLOR.title .. "===== " .. L.EGUP_VERIFY_HEAD .. " =====" .. COLOR.reset)
+
+    local ok, missing, wrong = 0, 0, 0
+
+    for _, id in ipairs(ids) do
+        local info = self:GetHeirloomInfo(id)
+        local name, link, quality, _, _, _, subType, _, equipLoc = GetItemInfo(id)
+
+        if not name then
+            missing = missing + 1
+            self:Raw(sformat("  %s%-6d%s %s%s%s  %s", COLOR.value, id, COLOR.reset,
+                COLOR.bad, L.EGUP_VERIFY_MISSING, COLOR.reset,
+                COLOR.grey .. (info and info.en or "?") .. COLOR.reset))
+        else
+            local problems = {}
+
+            if not (info and info.bag) and quality ~= HEIRLOOM_QUALITY then
+                problems[#problems + 1] = sformat(L.EGUP_VERIFY_QUALITY, tostring(quality))
+            end
+            if info and info.loc and info.loc ~= "" and equipLoc ~= info.loc then
+                -- Bogen kann je nach Client RANGED oder RANGEDRIGHT sein
+                local rangedOK = (info.loc == "INVTYPE_RANGED"
+                    and equipLoc == "INVTYPE_RANGEDRIGHT")
+                if not rangedOK then
+                    problems[#problems + 1] = sformat(L.EGUP_VERIFY_SLOT,
+                        tostring(equipLoc), tostring(info.loc))
+                end
+            end
+
+            if #problems > 0 then
+                wrong = wrong + 1
+                self:Raw(sformat("  %s%-6d%s %s  %s%s%s", COLOR.value, id, COLOR.reset,
+                    link or name, COLOR.warn, tconcat(problems, ", "), COLOR.reset))
+            else
+                ok = ok + 1
+                self:Raw(sformat("  %s%-6d%s %s  %s%s%s", COLOR.value, id, COLOR.reset,
+                    link or name, COLOR.grey, tostring(subType or ""), COLOR.reset))
+            end
+        end
+    end
+
+    self:Raw(sformat("%s%s%s  %s%d%s  |  %s%d%s  |  %s%d%s",
+        COLOR.title, L.EGUP_VERIFY_SUM, COLOR.reset,
+        COLOR.good, ok, COLOR.reset,
+        COLOR.warn, wrong, COLOR.reset,
+        COLOR.bad, missing, COLOR.reset))
+
+    if missing > 0 then
+        self:Raw(COLOR.grey .. L.EGUP_VERIFY_HINT .. COLOR.reset)
+    end
+end
+
+-- Paketvorschau ohne etwas zu senden
+function EG:PrintEGUPPackage(class, faction)
+    local package = self:GetEGUPPackage(class, faction)
+    if #package == 0 then
+        self:Print(COLOR.bad .. sformat(L.EGUP_NO_PACKAGE, tostring(class)) .. COLOR.reset)
+        return
+    end
+    self:Raw(COLOR.title .. sformat("%s: %s (%d)", L.EGUP_PACKAGE_HEAD,
+        tostring(class), #package) .. COLOR.reset)
+    for _, e in ipairs(package) do
+        local link = select(2, GetItemInfo(e.id))
+        self:Raw(sformat("  %s%-6d%s x%d  %s", COLOR.value, e.id, COLOR.reset,
+            e.count, link or e.name))
+    end
 end
 
 function EG:SendEGUPCommand(command)
@@ -2733,8 +2865,8 @@ function EG:ProcessEGUPQueue()
     SendNext()
 end
 
-function EG:StartEGUP(targetName, class)
-    local package = self:GetEGUPPackage(class)
+function EG:StartEGUP(targetName, class, faction)
+    local package = self:GetEGUPPackage(class, faction)
     if not package or #package == 0 then
         self:Print(COLOR.bad .. sformat(L.EGUP_NO_PACKAGE, tostring(class)) .. COLOR.reset)
         return
@@ -2744,6 +2876,7 @@ function EG:StartEGUP(targetName, class)
         targetName = targetName,
         targetGUID = UnitGUID("target"),
         class      = class,
+        faction    = faction,
         items      = {},
         active     = true,
         time       = time and time() or 0,
@@ -2777,7 +2910,7 @@ StaticPopupDialogs["EASYGEAR_EGUP_CONFIRM"] = {
     button2 = NO or "Nein",
     OnAccept = function(self)
         local d = self.data or EasyGear.pendingEGUP
-        if d then EasyGear:StartEGUP(d.name, d.class) end
+        if d then EasyGear:StartEGUP(d.name, d.class, d.faction) end
         EasyGear.pendingEGUP = nil
     end,
     OnCancel = function() EasyGear.pendingEGUP = nil end,
@@ -2794,6 +2927,7 @@ function EG:RunEGUP()
 
     local targetName = UnitName("target")
     local _, class   = UnitClass("target")
+    local faction    = UnitFactionGroup and UnitFactionGroup("target") or nil
 
     if not targetName then
         self:Print(COLOR.bad .. L.EGUP_NO_TARGET .. COLOR.reset); return
@@ -2802,20 +2936,20 @@ function EG:RunEGUP()
         self:Print(COLOR.bad .. L.EGUP_NO_CLASS .. COLOR.reset); return
     end
 
-    local package = self:GetEGUPPackage(class)
+    local package = self:GetEGUPPackage(class, faction)
     if not package or #package == 0 then
         self:Print(COLOR.bad .. sformat(L.EGUP_NO_PACKAGE, class) .. COLOR.reset); return
     end
 
     if self.db.egupConfirm then
-        self.pendingEGUP = { name = targetName, class = class }
+        self.pendingEGUP = { name = targetName, class = class, faction = faction }
         local dialog = StaticPopup_Show("EASYGEAR_EGUP_CONFIRM",
             sformat(L.EGUP_CONFIRM, class, #package, targetName))
         if dialog then dialog.data = self.pendingEGUP end
         return
     end
 
-    self:StartEGUP(targetName, class)
+    self:StartEGUP(targetName, class, faction)
 end
 
 ------------------------------------------------------------------------------
@@ -3006,6 +3140,9 @@ function EG:PrintReport(itemLink)
     if (item.minLevel or 0) > 0 then
         self:Raw(L.REQLEVEL .. ": " .. COLOR.value .. item.minLevel .. COLOR.reset)
     end
+    if EG:IsHeirloomItem(item) then
+        self:Raw(COLOR.warn .. L.HEIRLOOM .. COLOR.reset)
+    end
     if item.enchanted or (item.gemCount or 0) > 0 then
         local parts = {}
         if item.enchanted then parts[#parts + 1] = L.ENCHANTED end
@@ -3089,6 +3226,7 @@ function EG:PrintHelp()
     self:Raw(COLOR.value .. "/eg status" .. COLOR.reset)
     self:Raw(COLOR.value .. "/eg reset" .. COLOR.reset)
     self:Raw(COLOR.value .. "/egup" .. COLOR.reset .. "                " .. L.CMD_EGUP)
+    self:Raw(COLOR.value .. "/egup list|verify" .. COLOR.reset)
     self:Raw(COLOR.value .. "/egupclean" .. COLOR.reset .. "           " .. L.CMD_EGUPCLEAN)
 end
 
@@ -3302,7 +3440,35 @@ SlashCmdList["EASYGEARPROFILE"] = function()
 end
 
 SLASH_EGUP1 = "/egup"
-SlashCmdList["EGUP"] = function() EG:RunEGUP() end
+SlashCmdList["EGUP"] = function(msg)
+    local cmd, rest = smatch(msg or "", "^%s*(%S*)%s*(.-)%s*$")
+    cmd = slower(cmd or "")
+
+    if cmd == "verify" or cmd == "check" or cmd == "pruefen" then
+        local class = rest ~= "" and string.upper(rest) or nil
+        EG:VerifyHeirlooms(class)
+        return
+    elseif cmd == "list" or cmd == "paket" then
+        local class = rest ~= "" and string.upper(rest) or nil
+        local faction
+        if not class and UnitExists("target") and UnitIsPlayer("target") then
+            class   = select(2, UnitClass("target"))
+            faction = UnitFactionGroup and UnitFactionGroup("target") or nil
+        end
+        if not faction then
+            faction = UnitFactionGroup and UnitFactionGroup("player") or nil
+        end
+        EG:PrintEGUPPackage(class or EG:GetPlayerClass(), faction)
+        return
+    elseif cmd == "help" or cmd == "?" then
+        EG:Raw(COLOR.value .. "/egup" .. COLOR.reset .. "               " .. L.CMD_EGUP)
+        EG:Raw(COLOR.value .. "/egup list [klasse]" .. COLOR.reset)
+        EG:Raw(COLOR.value .. "/egup verify [klasse]" .. COLOR.reset)
+        return
+    end
+
+    EG:RunEGUP()
+end
 
 SLASH_EGUPCLEAN1 = "/egupclean"
 SlashCmdList["EGUPCLEAN"] = function() EG:RunEGUPClean() end
