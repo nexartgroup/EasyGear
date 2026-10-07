@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.6.0 - Vergleichsfenster  (/eggui)
+    EasyGear 3.0.0 - Vergleichsfenster  (/eggui)
 
     Links:  das abgelegte Item mit allen Berechnungsgrundlagen
     Rechts: das aktuell angelegte Gegenstueck mit derselben Aufschluesselung
@@ -530,7 +530,7 @@ function GUI:Refresh()
         return
     end
 
-    local result = EG:Compare(self.currentLink)
+    local result = EG:Compare(self.currentLink, true)
     if not result then
         FillSide(self.left, nil)
         FillSide(self.right, nil)
@@ -549,9 +549,14 @@ function GUI:Refresh()
         EG.ProfileGUI:Refresh()
     end
 
-    -- Linke Seite
+    -- Linke Seite. Bei mehreren moeglichen Slots (Ringe, Einhandwaffen) steht
+    -- hier der Slot, in den der Kandidat am besten passt.
+    local candSlotName = result.slotName
+    if result.mode == "EITHER" and result.candSlot then
+        candSlotName = EG:GetSlotName(result.candSlot)
+    end
     FillSide(self.left, result.item, result.breakdown, result.score,
-        self.currentLink, result.slotName)
+        self.currentLink, candSlotName)
 
     -- Rechte Seite: welchen Slot zeigen?
     local entries = result.equipped or {}
@@ -591,9 +596,9 @@ function GUI:Refresh()
     if result.usable ~= true then
         f.verdict:SetText(COLOR.bad .. L.NOT_USABLE .. COLOR.reset)
         f.note:SetText(tostring(result.reason or ""))
-    elseif result.protected then
-        f.verdict:SetText(COLOR.warn .. L.NO_UPGRADE .. COLOR.reset)
-        f.note:SetText(tostring(result.reason or ""))
+    elseif result.noCompare then
+        f.verdict:SetText(COLOR.grey .. L.R_NOCOMPARE .. COLOR.reset)
+        f.note:SetText("")
     else
         local delta = result.delta or 0
         local sign  = delta > 0 and "+" or ""
@@ -606,13 +611,17 @@ function GUI:Refresh()
             against = against .. " (" .. EG:GetSlotName(16) .. " + " .. EG:GetSlotName(17) .. ")"
         end
 
+        local pct = result.percent and (" (" .. EG:FmtPct(result.percent) .. ")") or ""
         f.verdict:SetText(sformat("%s%s%s     %s: %s%s%s     (%s %s)",
             col, head, COLOR.reset,
-            L.DIFFERENCE, col, sign .. FmtScore(delta), COLOR.reset,
+            L.DIFFERENCE, col, sign .. FmtScore(delta) .. pct, COLOR.reset,
             L.GUI_COMPARED, against))
 
-        local note = result.note or result.reason or ""
-        f.note:SetText(note)
+        -- Begruendung und Hinweise
+        local parts = {}
+        if result.reason then parts[#parts + 1] = result.reason end
+        if result.note   then parts[#parts + 1] = result.note end
+        f.note:SetText(table.concat(parts, "  "))
     end
 end
 

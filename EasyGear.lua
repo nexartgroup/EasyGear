@@ -1,29 +1,37 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.6.0
+    EasyGear 3.0.0
     Gear-Bewertung, Upgrade-Erkennung und Vergleich fuer WoW 3.3.5a (WotLK)
 
     Kompatibilitaet:
       * Client 3.3.5a / Interface 30300
-      * deDE (HD-Client) und enUS
+      * jede Clientsprache (Texte aus Locales/*.lang.lua, Fallback Englisch)
       * Lua 5.1
+
+    Dateien:
+      Locales/*.lang.lua      Sprachdateien (Lua-Syntax, eine je Clientsprache)
+      EasyGear.lua            Kern: Bewertung, Slots, Vergleich, Quest, Tooltip
+      EasyGearSpecs.lua       Gewichtungsprofile
+      EasyGearHeirlooms.lua   Erbstuecke und Klassenpakete
+      EasyGearOverlays.lua    Markierungen: Taschen, Haendler, Beute, Wuerfeln, ...
+      EasyGearEGUP.lua        GM-Paket und Aufraeumen
+      EasyGearGUI.lua         Item-Vergleichsfenster
+      EasyGearProfileGUI.lua  Profil-Vergleichsfenster
 
     Struktur dieser Datei:
       01  Namespace & Konstanten
       02  Lokalisierung
       03  Hilfsfunktionen (Timer, Ausgabe, Farben)
-      04  Scan-Tooltip (Verwendbarkeit, DPS, Heirloom-Werte)
-      05  Statistik-Schluessel & Gewichtungsprofile
-      06  Spec-/Rollen-Erkennung
-      07  Item-Daten (mit Cache)
+      04  Scan-Tooltip
+      05  Statistik-Schluessel
+      06  Profilverwaltung und Spec-Erkennung
+      07  Item-Daten (mit Cache), Tooltip-Auswertung
       08  Bewertung & Berechnungsgrundlagen
-      09  Slot-Aufloesung
+      09  Slot-Aufloesung (Ringe, Schildhand, Zweihand, Titanengriff)
       10  Verwendbarkeit (Ruestungsklasse, Waffen, Tooltip)
       11  Vergleichs-Engine
-      12  Taschen-Indikatoren + Hooks (Blizzard / ElvUI / Bagnon / Bank)
       13  Questbelohnungen
       14  Tooltip-Integration
-      15  EGUP (GM-Paket) und EGUPCLEAN
-      16  Slash-Befehle
+      16  Chat-Ausgabe und Slash-Befehle
       17  Initialisierung
 -----------------------------------------------------------------------------]]
 
@@ -32,7 +40,7 @@
 ------------------------------------------------------------------------------
 
 local ADDON_NAME    = "EasyGear"
-local ADDON_VERSION = "2.6.0"
+local ADDON_VERSION = "3.0.0"
 
 EasyGear = EasyGear or {}
 local EG = EasyGear
@@ -43,29 +51,39 @@ EG.version = ADDON_VERSION
 -- Lokale Kopien haeufig genutzter Globals (Lua-5.1-Performance)
 local pairs, ipairs, type, tonumber, tostring = pairs, ipairs, type, tonumber, tostring
 local select, unpack, wipe = select, unpack, wipe
-local tinsert, tremove, tconcat, tsort = table.insert, table.remove, table.concat, table.sort
-local sformat, smatch, sgsub, sfind, slower = string.format, string.match, string.gsub, string.find, string.lower
-local mhuge, mfloor, mmin, mmax = math.huge, math.floor, math.min, math.max
+local tremove, tconcat, tsort = table.remove, table.concat, table.sort
+local sformat, smatch, sgsub, sfind, slower, ssub, srep =
+    string.format, string.match, string.gsub, string.find, string.lower, string.sub, string.rep
+local mhuge, mmin, mmax = math.huge, math.min, math.max
 
 local HEIRLOOM_QUALITY  = 7
 local HEIRLOOM_MAX_LEVEL= 80
 local MAX_EQUIP_SLOT    = 19
+local OFFHAND_FACTOR    = 0.5   -- Nebenhand-Waffen verursachen nur halben Schaden
 
 -- Texturen
 local TEX_UPGRADE = "Interface\\Buttons\\UI-CheckBox-Check"
 local TEX_VENDOR  = "Interface\\MoneyFrame\\UI-GoldIcon"
 
+EG.TEX_UPGRADE = TEX_UPGRADE
+EG.TEX_VENDOR  = TEX_VENDOR
+
 -- Standardeinstellungen (SavedVariables)
 local DEFAULTS = {
     ilvlWeight       = 0.5,     -- Punkte pro Gegenstandsstufe (auf Stufe 80)
     ilvlScaling      = true,    -- Gegenstandsstufen-Basis mit Charakterstufe skalieren
-    dpsWeight        = nil,     -- nil = Wert aus dem Rollenprofil
-    socketValue      = 8,       -- Punkte pro freiem Sockelplatz
+    dpsWeight        = nil,     -- nil = Wert aus dem Profil
+    socketValue      = nil,     -- nil = automatisch (erwarteter Steinwert je Stufe und Profil)
     showBagIcons     = true,
     showQuestIcons   = true,
+    showItemIcons    = true,    -- Haendler, Beute, Wuerfeln, Auktionshaus, Handel, Post
     showTooltip      = true,
-    showTooltipStats = true,    -- Detailzeilen im Tooltip
-    protectHeirlooms = true,
+    showTooltipStats = true,    -- Slot- und Vergleichszeile im Tooltip
+    tooltipDiff      = true,    -- Attribut-Differenzen im Tooltip
+    protectHeirlooms = true,    -- Erbstuecke beim Leveln bevorzugen
+    heirloomBonus    = 1.5,     -- Aufschlag auf die Wertung (voll bis Stufe 60, bis 80 auf 1.0)
+    includeEnchants  = true,    -- Verzauberungen und Sockelsteine mitrechnen
+    autoLeveling     = true,    -- unter Stufe 80 das Leveln-Profil der Klasse benutzen
     iconSize         = 20,
     minDelta         = 0,       -- Mindestpunkte-Vorsprung fuer "Upgrade"
     minDeltaPercent  = 1,       -- zusaetzlich: Prozent des Vergleichswerts
@@ -75,6 +93,7 @@ local DEFAULTS = {
     debug            = false,
     custom           = {},      -- eigene Profile (accountweit)
 }
+EG.DEFAULTS = DEFAULTS
 
 local CHAR_DEFAULTS = {
     profile = "AUTO",           -- Profil-ID oder "AUTO" (Talentbaum-Erkennung)
@@ -89,280 +108,65 @@ local CHAR_DEFAULTS = {
 -- 02  Lokalisierung
 ------------------------------------------------------------------------------
 
+--[[ Die Texte stehen in Locales/<Sprache>.lang.lua (.lang = Sprachdatei, .lua
+     damit der Client sie sicher laedt). Jede Datei hat Lua-Syntax und
+     traegt ihre Tabelle in EasyGearLocales[<GetLocale()>] ein:
+
+         EasyGearLocales = EasyGearLocales or {}
+         EasyGearLocales["deDE"] = { LOADED = "EasyGear %s geladen.", ... }
+
+     Aufloesung je Schluessel:  Clientsprache  ->  Englisch  ->  Schluessel.
+     Fehlt eine Uebersetzung, erscheint also immer der englische Text. Die
+     Tabelle enUS ist die vollstaendige Referenz.
+
+     Sprachabhaengige Texte, die fuer die Grundfunktion noetig sind (Namen der
+     Ruestungs- und Waffenuntertypen), tragen den Praefix SUBTYPE_.            ]]
 local L
 do
-    local strings = {
-        -- allgemein
-        LOADED            = "EasyGear %s loaded.",
-        CMD_HEADER        = "Commands:",
-        CMD_EG            = "/eg            - open the comparison window",
-        CMD_EG_LINK       = "/eg <itemlink> - evaluate an item in chat",
-        CMD_EG_HELP       = "/eg help       - show all options",
-        CMD_EGUP          = "/egup          - GM: give the target the class package",
-        CMD_EGUPCLEAN     = "/egupclean     - remove recorded EGUP items from bags",
-        INVALID_ITEM      = "Could not read item information. Please supply a valid item link.",
-        ITEM_LOADING      = "Item data is not cached yet - please try again in a moment.",
-        -- Bewertung
-        TITLE             = "EasyGear - Item comparison",
-        CANDIDATE         = "Item to compare",
-        EQUIPPED          = "Currently equipped",
-        NOTHING_EQUIPPED  = "Slot is empty",
-        DROP_HINT         = "Drag an item here\nor shift-click it",
-        SCORE             = "Score",
-        ILVL              = "Item level",
-        SLOT              = "Slot",
-        TYPE              = "Type",
-        SUBTYPE           = "Subtype",
-        REQLEVEL          = "Required level",
-        SELLPRICE         = "Vendor price",
-        QUALITY           = "Quality",
-        STAT              = "Attribute",
-        VALUE             = "Value",
-        WEIGHT            = "Weight",
-        POINTS            = "Points",
-        TOTAL             = "Total",
-        BASE_ILVL         = "Item level base",
-        WEAPON_DPS        = "Weapon DPS",
-        SOCKETS           = "Empty sockets",
-        DIFFERENCE        = "Difference",
-        UPGRADE           = "UPGRADE",
-        NO_UPGRADE        = "NO UPGRADE",
-        NOT_USABLE        = "NOT USABLE",
-        PROFILE           = "Profile",
-        HEIRLOOM          = "Heirloom",
-        PROTECTED         = "protected",
-        -- Begruendungen
-        R_HEIRLOOM        = "An equipped heirloom is treated as best in slot below level %d.",
-        R_HEIRLOOM_WINS   = "A heirloom replaces a normal item - it scales with your level.",
-        R_HEIRLOOM_VS     = "Heirloom against heirloom - ranked by score.",
-        R_LOWER           = "The equipped item has a higher score.",
-        R_EQUAL           = "Same score as the equipped item.",
-        R_CLASS           = "Not usable by your class or armor proficiency.",
-        R_LEVEL           = "You need level %d for this item.",
-        R_EMPTY           = "The slot is empty - anything is an improvement.",
-        R_MINDELTA        = "The advantage of %s points is within noise - not counted as an upgrade.",
-        NOTE_2H           = "A two-handed weapon replaces main hand and off hand.",
-        NOTE_OFFHAND      = "A two-handed weapon is equipped and would have to be removed - compared against main hand plus off hand.",
-        NOTE_MH_2H        = "Would replace the equipped two-handed weapon.",
-        NOTE_HEIRLOOM_EST = "Heirloom values are read from the tooltip and are approximate.",
-        -- GUI
-        BTN_CLEAR         = "Clear",
-        BTN_CHAT          = "Print to chat",
-        BTN_CLOSE         = "Close",
-        GUI_SLOT1         = "Slot 1",
-        GUI_SLOT2         = "Slot 2",
-        GUI_COMPARED      = "compared against",
-        -- Rollen
-        ROLE_AUTO         = "Automatic",
-        ROLE_TANK         = "Tank",
-        ROLE_MELEE        = "Melee DPS",
-        ROLE_RANGED       = "Ranged DPS",
-        ROLE_CASTER       = "Caster DPS",
-        ROLE_HEAL         = "Healer",
-        -- Einstellungen
-        SET_ROLE          = "Role set to: %s",
-        ENCHANTED         = "enchanted",
-        GEMMED            = "%d gem(s)",
-        P_CANDIDATE       = "Comparison profile",
-        P_ACTIVEPROF      = "Active profile",
-        P_CLASS           = "Class",
-        P_MYCLASS         = "My class",
-        P_GEAR            = "Your equipped gear",
-        P_GEAR_SCORE      = "Gear score",
-        P_ITEM_LINE       = "Item from the comparison window",
-        P_SAVE_NEW        = "Save as new profile",
-        P_OVERWRITE       = "Save",
-        P_IS_ACTIVE       = "This is already the active profile.",
-        P_EDIT_HINT       = "Edit mode: change the weights on the left, then save.",
-        P_BETTER          = "Your gear collects more points under this weighting.",
-        P_WORSE           = "Your gear collects fewer points under this weighting.",
-        P_SAME            = "Same score under both weightings.",
-        P_CAVEAT          = "Totals of different profiles are only roughly comparable - what matters is which attributes carry the points.",
-        P_NOGEAR          = "No gear equipped.",
-        P_ITEMS           = "%d items",
-        SET_PROFILE       = "Active profile: %s",
-        SET_PVP           = "PvP mode: %s",
-        PROFILE_LIST      = "Available profiles",
-        PROFILE_AUTO_HINT = "detect from talent tree",
-        PROFILE_CMD_HINT  = "* = own profile   |   /eg profile <id>   |   /egprofile for the window",
-        PROFILE_UNKNOWN   = "Unknown profile: %s",
-        CMD_EGPROFILE     = "- profile overview and comparison",
-        P_TITLE           = "EasyGear - Profiles",
-        P_ACTIVATE        = "Activate A",
-        P_EDIT            = "Edit",
-        P_DELETE          = "Delete",
-        P_PVP             = "PvP mode (resilience and stamina)",
-        P_NEW_PROMPT      = "Name for the new profile:",
-        P_ONLY_CUSTOM     = "Only your own profiles can be edited - use Copy A first.",
-        SET_ILVL          = "Item level weight: %s",
-        SET_ON            = "enabled",
-        SET_OFF           = "disabled",
-        SET_RESET         = "Settings reset to defaults.",
-        SET_SCALE         = "Window scale: %s",
-        SET_MINDELTA      = "Minimum difference: %s points (+ %s%% relative)",
-        SET_ILVLSCALE     = "Item level base scales with character level: %s (currently x%s)",
-        -- EGUP
-        EGUP_NO_TARGET    = "Target a player first.",
-        EGUP_VERIFY_HEAD  = "Heirloom check",
-        EGUP_VERIFY_MISSING = "not in the client cache",
-        EGUP_VERIFY_QUALITY = "quality %s, expected heirloom",
-        EGUP_VERIFY_SLOT  = "slot %s, expected %s",
-        EGUP_VERIFY_SUM   = "OK / suspicious / missing:",
-        EGUP_VERIFY_HINT  = "Missing entries are usually uncached - open the item once, or the ID differs on this server. Correct it in EasyGearHeirlooms.lua.",
-        EGUP_PACKAGE_HEAD = "Package",
-        EGUP_NOT_PLAYER   = "The target is not a player.",
-        EGUP_NO_CLASS     = "Could not determine the target's class.",
-        EGUP_NO_PACKAGE   = "No package configured for %s.",
-        EGUP_CONFIRM      = "Send the %s package (%d entries) to %s?",
-        EGUP_RUNNING      = "Sending package to %s ...",
-        EGUP_DONE         = "EGUP completed.",
-        EGUP_HINT         = "After equipping the desired items use /egupclean.",
-        EGUP_NO_SESSION   = "No EGUP session available to clean.",
-        EGUP_WRONG_CHAR   = "EGUPCLEAN must be run by the character that received the package (%s).",
-        EGUP_CLEAN_START  = "Scanning bags for items from the last EGUP session ...",
-        EGUP_CLEAN_NONE   = "Nothing to clean.",
-        EGUP_CLEAN_DONE   = "EGUPCLEAN completed - %d item(s) removed.",
-        -- Integrationen
-        HOOK_ELVUI        = "ElvUI bag support enabled.",
-        HOOK_BAGNON       = "Bagnon bag support enabled.",
-        HOOK_IMMERSION    = "Immersion quest support enabled.",
-        QUEST_PICK        = "EasyGear recommendation",
+    EasyGearLocales = EasyGearLocales or {}
+
+    local ALIAS = { enGB = "enUS", esMX = "esES" }
+    local client = (GetLocale and GetLocale()) or "enUS"
+    local active = ALIAS[client] or client
+
+    local base = EasyGearLocales["enUS"]
+    local cur  = (active ~= "enUS") and EasyGearLocales[active] or nil
+
+    -- Notausgabe, falls die Sprachdateien nicht geladen wurden
+    local EMERGENCY = {
+        LOADED = "EasyGear %s loaded.",
+        LOCALE_BROKEN = "Language files were not loaded - check Locales\\*.lang.lua in EasyGear.toc.",
     }
 
-    if GetLocale() == "deDE" then
-        local de = {
-            LOADED            = "EasyGear %s geladen.",
-            CMD_HEADER        = "Befehle:",
-            CMD_EG            = "/eg            - Vergleichsfenster \195\182ffnen",
-            CMD_EG_LINK       = "/eg <itemlink> - Item im Chat auswerten",
-            CMD_EG_HELP       = "/eg help       - alle Optionen anzeigen",
-            CMD_EGUP          = "/egup          - GM: Klassenpaket an das Ziel geben",
-            CMD_EGUPCLEAN     = "/egupclean     - erfasste EGUP-Items aus den Taschen entfernen",
-            INVALID_ITEM      = "Item-Informationen konnten nicht gelesen werden. Bitte einen g\195\188ltigen Itemlink angeben.",
-            ITEM_LOADING      = "Die Item-Daten sind noch nicht im Cache - bitte gleich noch einmal versuchen.",
-            TITLE             = "EasyGear - Item-Vergleich",
-            CANDIDATE         = "Zu vergleichendes Item",
-            EQUIPPED          = "Aktuell angelegt",
-            NOTHING_EQUIPPED  = "Slot ist leer",
-            DROP_HINT         = "Item hierher ziehen\noder anklicken mit Shift",
-            SCORE             = "Wertung",
-            ILVL              = "Gegenstandsstufe",
-            SLOT              = "Slot",
-            TYPE              = "Typ",
-            SUBTYPE           = "Untertyp",
-            REQLEVEL          = "Ben\195\182tigte Stufe",
-            SELLPRICE         = "H\195\164ndlerpreis",
-            QUALITY           = "Qualit\195\164t",
-            STAT              = "Attribut",
-            VALUE             = "Wert",
-            WEIGHT            = "Gewicht",
-            POINTS            = "Punkte",
-            TOTAL             = "Gesamt",
-            BASE_ILVL         = "Basis Gegenstandsstufe",
-            WEAPON_DPS        = "Waffen-DPS",
-            SOCKETS           = "Freie Sockel",
-            DIFFERENCE        = "Differenz",
-            UPGRADE           = "VERBESSERUNG",
-            NO_UPGRADE        = "KEINE VERBESSERUNG",
-            NOT_USABLE        = "NICHT VERWENDBAR",
-            PROFILE           = "Profil",
-            HEIRLOOM          = "Erbst\195\188ck",
-            PROTECTED         = "gesch\195\188tzt",
-            R_HEIRLOOM        = "Ein angelegtes Erbst\195\188ck gilt unterhalb von Stufe %d als bestes Item des Slots.",
-            R_HEIRLOOM_WINS   = "Ein Erbst\195\188ck ersetzt ein normales Item - es w\195\164chst mit deiner Stufe mit.",
-            R_HEIRLOOM_VS     = "Erbst\195\188ck gegen Erbst\195\188ck - hier entscheidet die Wertung.",
-            R_LOWER           = "Das angelegte Item hat die h\195\182here Wertung.",
-            R_EQUAL           = "Gleiche Wertung wie das angelegte Item.",
-            R_CLASS           = "F\195\188r deine Klasse bzw. R\195\188stungsklasse nicht verwendbar.",
-            R_LEVEL           = "Du ben\195\182tigst Stufe %d f\195\188r dieses Item.",
-            R_EMPTY           = "Der Slot ist leer - alles ist eine Verbesserung.",
-            R_MINDELTA        = "Der Vorsprung liegt unter der Schwelle von %s Punkten - das ist Rauschen.",
-            NOTE_2H           = "Eine Zweihandwaffe ersetzt Waffenhand und Schildhand.",
-            NOTE_OFFHAND      = "Die angelegte Zweihandwaffe m\195\188sste daf\195\188r abgelegt werden - verglichen wird gegen Waffenhand + Schildhand.",
-            NOTE_MH_2H        = "W\195\188rde die angelegte Zweihandwaffe ersetzen.",
-            NOTE_HEIRLOOM_EST = "Erbst\195\188ck-Werte werden aus dem Tooltip gelesen und sind N\195\164herungswerte.",
-            BTN_CLEAR         = "Leeren",
-            BTN_CHAT          = "In den Chat",
-            BTN_CLOSE         = "Schlie\195\159en",
-            GUI_SLOT1         = "Slot 1",
-            GUI_SLOT2         = "Slot 2",
-            GUI_COMPARED      = "verglichen mit",
-            ROLE_AUTO         = "Automatisch",
-            ROLE_TANK         = "Tank",
-            ROLE_MELEE        = "Nahkampf-DD",
-            ROLE_RANGED       = "Fernkampf-DD",
-            ROLE_CASTER       = "Zauber-DD",
-            ROLE_HEAL         = "Heiler",
-            SET_ROLE          = "Rolle gesetzt: %s",
-            ENCHANTED         = "verzaubert",
-            GEMMED            = "%d Sockelstein(e)",
-            P_CANDIDATE       = "Vergleichsprofil",
-            P_ACTIVEPROF      = "Aktives Profil",
-            P_CLASS           = "Klasse",
-            P_MYCLASS         = "Meine Klasse",
-            P_GEAR            = "Deine angelegte Ausr\195\188stung",
-            P_GEAR_SCORE      = "Ausr\195\188stungswertung",
-            P_ITEM_LINE       = "Item aus dem Vergleichsfenster",
-            P_SAVE_NEW        = "Als neues Profil speichern",
-            P_OVERWRITE       = "Speichern",
-            P_IS_ACTIVE       = "Das ist bereits das aktive Profil.",
-            P_EDIT_HINT       = "Bearbeitungsmodus: links die Gewichte \195\164ndern, dann speichern.",
-            P_BETTER          = "Deine Ausr\195\188stung sammelt unter dieser Gewichtung mehr Punkte.",
-            P_WORSE           = "Deine Ausr\195\188stung sammelt unter dieser Gewichtung weniger Punkte.",
-            P_SAME            = "Gleiche Wertung unter beiden Gewichtungen.",
-            P_CAVEAT          = "Gesamtsummen verschiedener Profile sind nur grob vergleichbar - aussagekr\195\164ftig ist, welche Attribute die Punkte tragen.",
-            P_NOGEAR          = "Keine Ausr\195\188stung angelegt.",
-            P_ITEMS           = "%d Teile",
-            SET_PROFILE       = "Aktives Profil: %s",
-            SET_PVP           = "PvP-Modus: %s",
-            PROFILE_LIST      = "Verf\195\188gbare Profile",
-            PROFILE_AUTO_HINT = "\195\188ber Talentbaum erkennen",
-            PROFILE_CMD_HINT  = "* = eigenes Profil   |   /eg profile <id>   |   /egprofile \195\182ffnet das Fenster",
-            PROFILE_UNKNOWN   = "Unbekanntes Profil: %s",
-            CMD_EGPROFILE     = "- Profil\195\188bersicht und Vergleich",
-            P_TITLE           = "EasyGear - Profile",
-            P_ACTIVATE        = "A aktivieren",
-            P_EDIT            = "Bearbeiten",
-            P_DELETE          = "L\195\182schen",
-            P_PVP             = "PvP-Modus (Abh\195\164rtung und Ausdauer)",
-            P_NEW_PROMPT      = "Name f\195\188r das neue Profil:",
-            P_ONLY_CUSTOM     = "Nur eigene Profile lassen sich bearbeiten - zuerst A kopieren.",
-            SET_ILVL          = "Gewicht Gegenstandsstufe: %s",
-            SET_ON            = "aktiviert",
-            SET_OFF           = "deaktiviert",
-            SET_RESET         = "Einstellungen auf Standard zur\195\188ckgesetzt.",
-            SET_SCALE         = "Fenstergr\195\182\195\159e: %s",
-            SET_MINDELTA      = "Mindestdifferenz: %s Punkte (+ %s%% relativ)",
-            SET_ILVLSCALE     = "Basis Gegenstandsstufe skaliert mit Charakterstufe: %s (aktuell x%s)",
-            EGUP_NO_TARGET    = "Bitte zuerst einen Spieler anvisieren.",
-            EGUP_VERIFY_HEAD  = "Erbst\195\188ckpr\195\188fung",
-            EGUP_VERIFY_MISSING = "nicht im Client-Cache",
-            EGUP_VERIFY_QUALITY = "Qualit\195\164t %s, erwartet Erbst\195\188ck",
-            EGUP_VERIFY_SLOT  = "Slot %s, erwartet %s",
-            EGUP_VERIFY_SUM   = "OK / auff\195\164llig / fehlend:",
-            EGUP_VERIFY_HINT  = "Fehlende Eintr\195\164ge sind meist nur ungecacht - Item einmal ansehen. Sonst weicht die ID auf diesem Server ab und geh\195\182rt in EasyGearHeirlooms.lua korrigiert.",
-            EGUP_PACKAGE_HEAD = "Paket",
-            EGUP_NOT_PLAYER   = "Das Ziel ist kein Spieler.",
-            EGUP_NO_CLASS     = "Die Klasse des Ziels konnte nicht ermittelt werden.",
-            EGUP_NO_PACKAGE   = "Kein Paket f\195\188r %s konfiguriert.",
-            EGUP_CONFIRM      = "Paket %s (%d Eintr\195\164ge) an %s senden?",
-            EGUP_RUNNING      = "Sende Paket an %s ...",
-            EGUP_DONE         = "EGUP abgeschlossen.",
-            EGUP_HINT         = "Nach dem Anlegen der gew\195\188nschten Items /egupclean benutzen.",
-            EGUP_NO_SESSION   = "Keine EGUP-Sitzung zum Aufr\195\164umen vorhanden.",
-            EGUP_WRONG_CHAR   = "EGUPCLEAN muss von dem Charakter ausgef\195\188hrt werden, der das Paket erhalten hat (%s).",
-            EGUP_CLEAN_START  = "Durchsuche Taschen nach Items der letzten EGUP-Sitzung ...",
-            EGUP_CLEAN_NONE   = "Nichts aufzur\195\164umen.",
-            EGUP_CLEAN_DONE   = "EGUPCLEAN abgeschlossen - %d Item(s) entfernt.",
-            HOOK_ELVUI        = "ElvUI-Taschenunterst\195\188tzung aktiviert.",
-            HOOK_BAGNON       = "Bagnon-Taschenunterst\195\188tzung aktiviert.",
-            HOOK_IMMERSION    = "Immersion-Questunterst\195\188tzung aktiviert.",
-            QUEST_PICK        = "EasyGear-Empfehlung",
-        }
-        for k, v in pairs(de) do strings[k] = v end
+    local loaded = {}
+    for code in pairs(EasyGearLocales) do loaded[#loaded + 1] = code end
+    tsort(loaded)
+
+    EG.locale = {
+        client    = client,                       -- was GetLocale() liefert
+        active    = cur and active or "enUS",     -- tatsaechlich benutzte Sprachdatei
+        translated= cur ~= nil,
+        baseOK    = base ~= nil,
+        loaded    = loaded,
+    }
+
+    L = setmetatable({}, { __index = function(_, k)
+        local v = cur and cur[k]
+        if v == nil and base then v = base[k] end
+        if v == nil then v = EMERGENCY[k] end
+        if v == nil then v = k end
+        return v
+    end })
+
+    -- Gibt es fuer diesen Schluessel einen echten Text (nicht nur den Schluessel)?
+    function EG:LocaleHas(key)
+        return (cur and cur[key] ~= nil) or (base and base[key] ~= nil) or false
     end
 
-    L = setmetatable(strings, { __index = function(_, k) return k end })
+    -- Rohzugriff auf eine bestimmte Sprachtabelle (Tests, Untertyp-Namen)
+    function EG:LocaleTable(code)
+        return EasyGearLocales[code]
+    end
 end
 
 EG.L = L
@@ -433,10 +237,45 @@ EG.Num       = function(_, v, d) return Num(v, d) end
 EG.FmtScore  = function(_, v) return FmtScore(v) end
 EG.FmtWeight = function(_, v) return FmtWeight(v) end
 
+-- Prozentangabe mit Vorzeichen: "+8.2%"
+local function FmtPct(v)
+    if not v then return "" end
+    local a = (v < 0) and -v or v
+    local s = (a < 10) and sformat("%.1f", v) or sformat("%.0f", v)
+    return ((v > 0) and "+" or "") .. s .. "%"
+end
+EG.FmtPct = function(_, v) return FmtPct(v) end
+
 -- Muster-Sonderzeichen entschaerfen
 local function EscapePattern(s)
     return (sgsub(s or "", "([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1"))
 end
+EG.EscapePattern = function(_, s) return EscapePattern(s) end
+
+-- "a|b|c" -> { "a", "b", "c" }
+local function SplitAliases(s)
+    local out = {}
+    if not s or s == "" then return out end
+    for part in string.gmatch(s, "[^|]+") do out[#out + 1] = part end
+    return out
+end
+EG.SplitAliases = function(_, s) return SplitAliases(s) end
+
+-- "1.2.10" < "3.0.0" ?
+local function VersionLess(a, b)
+    local function parts(v)
+        local t = {}
+        for n in string.gmatch(tostring(v or ""), "%d+") do t[#t + 1] = tonumber(n) end
+        return t
+    end
+    local pa, pb = parts(a), parts(b)
+    for i = 1, mmax(#pa, #pb) do
+        local x, y = pa[i] or 0, pb[i] or 0
+        if x ~= y then return x < y end
+    end
+    return false
+end
+EG.VersionLess = function(_, a, b) return VersionLess(a, b) end
 
 --[[ Timer
      Der Original-Code benutzte einen einzigen Frame; jeder neue Aufruf
@@ -498,25 +337,19 @@ local function SetScanTip(link)
     return scanTip:NumLines() > 0
 end
 
--- Muster fuer "(x.y Schaden pro Sekunde)" bzw. "(x.y damage per second)"
-local dpsPattern
-do
-    local tpl = DPS_TEMPLATE or "(%s damage per second)"
-    tpl = sgsub(tpl, "%%%d%$s", "\1")
-    tpl = sgsub(tpl, "%%s", "\1")
+-- Vorlage der Blizzard-Globals ("%s Schaden pro Sekunde") in ein Muster wandeln
+local function TemplateToPattern(tpl, capture)
+    tpl = sgsub(tpl, "%%%d%$[sd]", "\1")
+    tpl = sgsub(tpl, "%%[sd]", "\1")
     tpl = EscapePattern(tpl)
-    dpsPattern = sgsub(tpl, "\1", "([%%d%%.,]+)")
+    return (sgsub(tpl, "\1", capture))
 end
 
+-- Muster fuer "(x.y Schaden pro Sekunde)" bzw. "(x.y damage per second)"
+local dpsPattern = TemplateToPattern(DPS_TEMPLATE or "(%s damage per second)", "([%%d%%.,]+)")
+
 -- Muster fuer "Benoetigt Stufe X" - solche roten Zeilen behandeln wir separat
-local minLevelPattern
-do
-    local tpl = ITEM_MIN_LEVEL or "Requires Level %d"
-    tpl = sgsub(tpl, "%%%d%$d", "\1")
-    tpl = sgsub(tpl, "%%d", "\1")
-    tpl = EscapePattern(tpl)
-    minLevelPattern = sgsub(tpl, "\1", "(%%d+)")
-end
+local minLevelPattern = TemplateToPattern(ITEM_MIN_LEVEL or "Requires Level %d", "(%%d+)")
 
 local function IsRed(fs)
     if not fs then return false end
@@ -558,7 +391,7 @@ function EG:TooltipDPS(link)
 end
 
 ------------------------------------------------------------------------------
--- 05  Statistik-Schluessel & Gewichtungsprofile
+-- 05  Statistik-Schluessel
 ------------------------------------------------------------------------------
 
 -- Kurzform -> echter Schluessel aus GetItemStats()
@@ -591,11 +424,20 @@ local S = {
 }
 EG.STAT_KEYS = S
 
+-- Aeltere Schluessel, die GetItemStats() je nach Item liefern kann
+local STAT_ALIAS = {
+    ITEM_MOD_MANA_REGENERATION_SHORT = S.MP5,
+}
+
 -- Pseudo-Schluessel, die nicht aus GetItemStats() stammen
-local PSEUDO_DPS    = "__DPS"
-local PSEUDO_SOCKET = "__SOCKET"
-EG.PSEUDO_DPS    = PSEUDO_DPS
-EG.PSEUDO_SOCKET = PSEUDO_SOCKET
+local PSEUDO_DPS     = "__DPS"        -- Nahkampfwaffen
+local PSEUDO_RDPS    = "__RDPS"       -- Fernkampfwaffen, Wurfwaffen, Zauberstaebe
+local PSEUDO_SOCKET  = "__SOCKET"
+local PSEUDO_HEIRLOOM= "__HEIRLOOM"
+EG.PSEUDO_DPS      = PSEUDO_DPS
+EG.PSEUDO_RDPS     = PSEUDO_RDPS
+EG.PSEUDO_SOCKET   = PSEUDO_SOCKET
+EG.PSEUDO_HEIRLOOM = PSEUDO_HEIRLOOM
 
 local SOCKET_KEYS = {
     "EMPTY_SOCKET_RED", "EMPTY_SOCKET_YELLOW", "EMPTY_SOCKET_BLUE",
@@ -616,8 +458,9 @@ EG.STAT_ORDER = STAT_ORDER
      "STR" -> ITEM_MOD_STRENGTH_SHORT, "DPS" -> __DPS usw.
      Wird auch von EasyGearSpecs.lua benutzt.                              ]]
 local SHORTHAND_EXTRA = {
-    DPS    = "__DPS",
-    SOCKET = "__SOCKET",
+    DPS    = PSEUDO_DPS,
+    RDPS   = PSEUDO_RDPS,
+    SOCKET = PSEUDO_SOCKET,
 }
 
 local function mk(t)
@@ -635,19 +478,26 @@ function EG:MakeWeights(t) return mk(t) end
      liegen in EasyGearDB.custom.                                          ]]
 
 ------------------------------------------------------------------------------
--- 06  Spec-/Rollen-Erkennung
+-- 06  Profilverwaltung und Spec-Erkennung
 ------------------------------------------------------------------------------
 
 EG.profileCache = nil
 EG.epoch = 0
+EG.scoreCache = {}
+EG.stateCache = {}
 
--- Jede Aenderung an Profil oder Einstellungen erhoeht die Epoche; daran
--- erkennen die Taschen-Buttons, dass ihr zwischengespeichertes Ergebnis
--- veraltet ist.
+--[[ Jede Aenderung an Profil, Ausruestung oder Einstellungen verwirft die
+     berechneten Vergleiche und erhoeht die Epoche; daran erkennen die
+     Markierungen an Taschen, Haendlern usw., dass ihr Ergebnis veraltet ist. ]]
+function EG:InvalidateComparisons()
+    self.scoreCache = {}
+    self.stateCache = {}
+    self.epoch = (self.epoch or 0) + 1
+end
+
 function EG:InvalidateProfile()
     self.profileCache = nil
-    self.scoreCache = {}
-    self.epoch = (self.epoch or 0) + 1
+    self:InvalidateComparisons()
 end
 
 --[[--------------------------------------------------------------------
@@ -656,10 +506,10 @@ end
      Alle Profile liegen in EG.SPECS (klassenweise) und EG.SPECS_ANY
      (klassenunabhaengig); eigene Profile kommen aus EasyGearDB.custom.
      Ausgewaehlt wird ueber die ID in EasyGearCharDB.profile, "AUTO"
-     bedeutet Erkennung ueber den Talentbaum.
+     bedeutet Erkennung ueber Talentbaum, Stufe und Ausruestung.
 ----------------------------------------------------------------------]]
 
--- PvP-Aufschlag: Abhaertung und Ausdauer werden aufgewertet
+-- ApplyPvP: Abhaertung und Ausdauer werden aufgewertet
 local function ApplyPvP(weights)
     local out = {}
     for k, v in pairs(weights) do out[k] = v end
@@ -674,18 +524,28 @@ function EG:GetPlayerClass()
     return class or "WARRIOR"
 end
 
+-- Profilname und Beschreibung stehen in den Sprachdateien (SPEC_<id>, SPEC_<id>_D)
 function EG:GetProfileName(spec)
     if not spec then return "?" end
     if spec.custom then return spec.name or spec.id end
-    if GetLocale() == "deDE" then return spec.de or spec.en or spec.id end
-    return spec.en or spec.de or spec.id
+    local key = "SPEC_" .. tostring(spec.id)
+    if self:LocaleHas(key) then return L[key] end
+    return spec.en or spec.id
 end
 
 function EG:GetProfileDesc(spec)
     if not spec then return "" end
     if spec.custom then return spec.desc or "" end
-    if GetLocale() == "deDE" then return spec.hd or spec.he or "" end
-    return spec.he or spec.hd or ""
+    local key = "SPEC_" .. tostring(spec.id) .. "_D"
+    if self:LocaleHas(key) then return L[key] end
+    return ""
+end
+
+--[[ ID des Standardprofils einer Klasse: <Praefix>_LEVELING / <Praefix>_ALLROUND.
+     Der Praefix steht in EasyGearSpecs.lua (DK statt DEATHKNIGHT).         ]]
+function EG:ClassProfileID(class, kind)
+    local prefix = (self.PROFILE_PREFIX and self.PROFILE_PREFIX[class]) or class
+    return prefix .. "_" .. kind
 end
 
 --[[ Alle fuer diese Klasse waehlbaren Profile, in fester Reihenfolge:
@@ -744,11 +604,47 @@ function EG:GetProfileByID(id)
     return nil
 end
 
--- Talentbaum mit den meisten Punkten -> passendes Profil
-function EG:DetectProfile(class)
-    class = class or self:GetPlayerClass()
-    local list = self.SPECS and self.SPECS[class]
+------------------------------------------------------------------------------
+-- Talente
+------------------------------------------------------------------------------
 
+EG.talentCache = nil
+
+-- Alle Talente mit Symbol und Rang. Das Symbol ist sprachunabhaengig - Talentnamen
+-- sind es nicht, deshalb wird nur ueber den Symbolpfad erkannt.
+function EG:GetTalentIcons()
+    if self.talentCache then return self.talentCache end
+    local list = {}
+    local numTabs = (GetNumTalentTabs and GetNumTalentTabs()) or 0
+    for tab = 1, numTabs do
+        local n = (GetNumTalents and GetNumTalents(tab)) or 0
+        for i = 1, n do
+            local _, icon, _, _, rank = GetTalentInfo(tab, i)
+            if icon then
+                list[#list + 1] = { icon = slower(tostring(icon)), rank = tonumber(rank) or 0, tab = tab }
+            end
+        end
+    end
+    if #list > 0 then self.talentCache = list end
+    return list
+end
+
+function EG:HasTalentIcon(fragment)
+    fragment = slower(fragment)
+    for _, t in ipairs(self:GetTalentIcons()) do
+        if t.rank > 0 and sfind(t.icon, fragment, 1, true) then return true end
+    end
+    return false
+end
+
+function EG:InvalidateTalents()
+    self.talentCache = nil
+    self.hasTG = nil
+    self.hasDW = nil
+end
+
+-- Talentbaum mit den meisten Punkten
+function EG:GetDominantTab()
     local bestTab, bestPoints = nil, 0
     local numTabs = (GetNumTalentTabs and GetNumTalentTabs()) or 3
     for i = 1, (numTabs or 3) do
@@ -757,20 +653,80 @@ function EG:DetectProfile(class)
             bestPoints, bestTab = points, i
         end
     end
+    return bestTab, bestPoints
+end
 
-    -- Zu wenige Punkte gesetzt: neutrales Levelprofil
-    if not list or not bestTab or bestPoints < 5 then
-        return self:GetProfileByID("LEVELING"), true
-    end
+local WEAPON_LOC = {
+    INVTYPE_WEAPON = true, INVTYPE_2HWEAPON = true, INVTYPE_WEAPONMAINHAND = true,
+    INVTYPE_WEAPONOFFHAND = true,
+}
+local RANGED_LOC = {
+    INVTYPE_RANGED = true, INVTYPE_RANGEDRIGHT = true, INVTYPE_THROWN = true,
+}
+EG.WEAPON_LOC = WEAPON_LOC
+EG.RANGED_LOC = RANGED_LOC
 
-    local fallback
+--[[ Mehrere Profile im selben Baum (Blut Tank/DD, Frost beidhaendig/Zweihand):
+     entschieden wird nach der angelegten Waffenhaltung, sonst gilt das als
+     auto markierte Profil.                                                ]]
+function EG:PickTabSpec(list, tab)
+    local candidates, default = {}, nil
     for _, spec in ipairs(list) do
-        if spec.tab == bestTab then
-            if spec.auto then return spec, true end
-            fallback = fallback or spec
+        if spec.tab == tab then
+            candidates[#candidates + 1] = spec
+            if spec.auto and not default then default = spec end
         end
     end
-    return fallback or list[1], true
+    if #candidates == 0 then return nil end
+    default = default or candidates[1]
+    if #candidates == 1 then return default end
+
+    local mh = self:GetEquippedData(16)
+    local oh = self:GetEquippedData(17)
+    local style
+    if mh and mh.equipLoc == "INVTYPE_2HWEAPON" then
+        style = "2H"
+    elseif oh and WEAPON_LOC[oh.equipLoc] then
+        style = "DW"
+    end
+    if style then
+        for _, spec in ipairs(candidates) do
+            if spec.hands == style then return spec end
+        end
+    end
+    return default
+end
+
+--[[ Automatische Profilwahl.
+
+       * kaum Talente        -> Leveln (unter 80) bzw. Allround (ab 80)
+       * Unter Stufe 80      -> Leveln-Profil der Klasse. Ausnahme: Tank- und
+                                Heilbaeume behalten ihr Profil, weil sich dort
+                                die Gewichtung grundlegend unterscheidet.
+       * Stufe 80            -> Profil des Talentbaums                       ]]
+function EG:DetectProfile(class)
+    class = class or self:GetPlayerClass()
+    local list  = self.SPECS and self.SPECS[class]
+    local level = UnitLevel("player") or 1
+
+    local leveling = self:GetProfileByID(self:ClassProfileID(class, "LEVELING"))
+                  or self:GetProfileByID("LEVELING")
+    local allround = self:GetProfileByID(self:ClassProfileID(class, "ALLROUND")) or leveling
+
+    local tab, points = self:GetDominantTab()
+
+    if not list or not tab or points < 5 then
+        if level < HEIRLOOM_MAX_LEVEL then return leveling, true end
+        return allround, true
+    end
+
+    local spec = self:PickTabSpec(list, tab) or list[1]
+
+    if self.db and self.db.autoLeveling and level < HEIRLOOM_MAX_LEVEL
+        and leveling and spec and spec.role ~= "TANK" and spec.role ~= "HEAL" then
+        return leveling, true
+    end
+    return spec, true
 end
 
 function EG:GetActiveProfileID()
@@ -802,10 +758,21 @@ function EG:SetPvPMode(on)
     if self.ProfileGUI then self.ProfileGUI:Refresh() end
 end
 
--- Endgueltige Gewichte eines Profils (inklusive PvP-Aufschlag)
+--[[ Endgueltige Gewichte eines Profils (inklusive PvP-Aufschlag).
+     Profile mit Varianten (Leveln fuer Hybridklassen) waehlen die Gewichte
+     nach dem Talentbaum mit den meisten Punkten.                          ]]
+function EG:GetVariantTab(spec)
+    if not (spec and spec.variants) then return nil end
+    local tab, points = self:GetDominantTab()
+    if tab and points >= 5 and spec.variants[tab] then return tab end
+    return nil
+end
+
 function EG:GetWeightsFor(spec, withPvP)
     if not spec then return {} end
     local w = spec.weights or {}
+    local vt = self:GetVariantTab(spec)
+    if vt then w = spec.variants[vt].weights or w end
     if withPvP then w = ApplyPvP(w) end
     return w
 end
@@ -828,7 +795,7 @@ function EG:GetProfile()
         if not spec then spec, auto = self:DetectProfile(class) end
     end
     if not spec then
-        spec = { id = "LEVELING", weights = {}, de = "Levelphase", en = "Leveling" }
+        spec = { id = "LEVELING", weights = {} }
     end
 
     local pvp     = self:IsPvPMode()
@@ -838,10 +805,17 @@ function EG:GetProfile()
     if auto then label = label .. " (" .. L.ROLE_AUTO .. ")" end
     if pvp   then label = label .. " [PvP]" end
 
+    local db = self.db or DEFAULTS
     local sig = class .. ":" .. tostring(spec.id) .. ":" .. tostring(pvp)
         .. ":" .. tostring(UnitLevel("player"))
-        .. ":" .. tostring(self.db and self.db.ilvlWeight)
-        .. ":" .. tostring(self.db and self.db.ilvlScaling)
+        .. ":" .. tostring(db.ilvlWeight)
+        .. ":" .. tostring(db.ilvlScaling)
+        .. ":" .. tostring(db.socketValue)
+        .. ":" .. tostring(db.dpsWeight)
+        .. ":" .. tostring(db.protectHeirlooms)
+        .. ":" .. tostring(db.heirloomBonus)
+        .. ":" .. tostring(db.includeEnchants)
+        .. ":" .. tostring(self:GetVariantTab(spec))
         .. ":" .. tostring(spec.rev or 0)
 
     self.profileCache = { weights = weights, name = label, sig = sig,
@@ -862,11 +836,11 @@ function EG:CreateCustomProfile(name, baseID, class)
     if not self.db then return nil end
     self.db.custom = self.db.custom or {}
 
-    name = (name and name ~= "") and name or "Profil"
+    name = (name and name ~= "") and name or L.PROFILE
 
     -- eindeutige ID erzeugen
     local base, n = "CUSTOM_" .. sgsub(name, "[^%w]", ""), 1
-    if base == "CUSTOM_" then base = "CUSTOM_PROFIL" end
+    if base == "CUSTOM_" then base = "CUSTOM_PROFILE" end
     local id = base
     while self.db.custom[id] or self:GetProfileByID(id) do
         n = n + 1
@@ -875,14 +849,16 @@ function EG:CreateCustomProfile(name, baseID, class)
 
     local source = baseID and self:GetProfileByID(baseID)
     local weights = {}
-    if source and source.weights then
-        for k, v in pairs(source.weights) do weights[k] = v end
+    if source then
+        local src = self:GetWeightsFor(source, false)
+        for k, v in pairs(src) do weights[k] = v end
     end
 
     self.db.custom[id] = {
         id = id, name = name, custom = true, rev = 1,
         class = class or self:GetPlayerClass(),
         role = source and source.role or "MELEE",
+        hands = source and source.hands or nil,
         desc = source and (L.PROFILE .. ": " .. self:GetProfileName(source)) or "",
         weights = weights,
     }
@@ -927,7 +903,7 @@ end
 
 function EG:GetProfileKey()
     self:GetProfile()
-    return self.profileCache and self.profileCache.profile or "LOWLEVEL"
+    return self.profileCache and self.profileCache.profile or "LEVELING"
 end
 
 ------------------------------------------------------------------------------
@@ -935,19 +911,22 @@ end
 ------------------------------------------------------------------------------
 
 EG.itemCache  = {}
-EG.scoreCache = {}
+EG.tipCache   = {}
 local itemCacheCount = 0
 
 function EG:WipeItemCache()
     self.itemCache      = {}
     self.scoreCache     = {}
+    self.stateCache     = {}
     self.tipCache       = {}
     self.equippedTotals = nil
     itemCacheCount      = 0
+    self.epoch          = (self.epoch or 0) + 1
 end
 
--- Statwerte aus dem Tooltip lesen (fuer Erbstuecke, deren GetItemStats()
--- nur die ungeskalierten Basiswerte liefert)
+-- Zwischenspeicher fuer Tooltip-Bestandteile, die nur einmal gebaut werden
+local statPatternCache, segmentCache, socketBonusPattern
+
 --[[--------------------------------------------------------------------
      Tooltip-Auswertung
 
@@ -957,31 +936,22 @@ end
      eine unverzauberte. Die einzige verlaessliche Quelle ist der Tooltip,
      denn dort steht die Verzauberung als eigene gruene Zeile.
 
-     WotLK benutzt dabei zwei Formate:
-       "+55 Ausdauer"                                (Primaerattribute)
-       "Ausruesten: Verbessert Tempowertung um 55."  (Wertungen)
-     Deshalb werden Muster aus beiden Globals gebaut: dem kurzen Namen
-     (ITEM_MOD_X_SHORT) und der langen Vorlage (ITEM_MOD_X).
+     Im Tooltip kommen vier Zeilenformen vor:
 
-     Alle Muster sind vorne und hinten verankert. Das ist wichtig, damit
-     Proc-Texte wie "Erhoeht Eure Angriffskraft um 340 fuer 10 Sek." nicht
-     als dauerhafter Wert gezaehlt werden.
+       "+55 Ausdauer"                                   Basiswerte
+       "Ausruesten: Verbessert Tempowertung um 55."     Wertungen
+       "+10 Staerke und +15 Ausdauer"                   Edelsteine, Verzauberungen
+       "Sockelbonus: +4 Ausdauer"                       Sockelbonus (aktiv: gruen)
+
+     Die ersten beiden werden ueber Muster aus den lokalisierten
+     Blizzard-Globals erkannt (ITEM_MOD_X_SHORT und ITEM_MOD_X), vorne und
+     hinten verankert, damit Proc-Texte wie "Erhoeht Eure Angriffskraft um
+     340 fuer 10 Sek." nicht als dauerhafter Wert gezaehlt werden. Die dritte
+     und vierte Form werden segmentweise gelesen: jedes "+Zahl Attributname"
+     zaehlt, der Rest der Zeile ("und 3% erhoehter kritischer Schaden") wird
+     ignoriert. Zeilen mit Ausruesten-/Benutzen-/Proc-Praefix sind davon
+     ausgenommen.
 ----------------------------------------------------------------------]]
-
-local statPatternCache
-
-local function LongTemplateToPattern(tpl)
-    -- %c steht in einigen Vorlagen fuer das Vorzeichen ("%c%s Staerke")
-    local pat = sgsub(tpl, "%%c", "\2")
-    pat = sgsub(pat, "%%%d%$s", "\1")
-    pat = sgsub(pat, "%%%d%$d", "\1")
-    pat = sgsub(pat, "%%s", "\1")
-    pat = sgsub(pat, "%%d", "\1")
-    pat = EscapePattern(pat)
-    pat = sgsub(pat, "\1", "([%%d%%.,]+)")
-    pat = sgsub(pat, "\2", "%%+?")
-    return pat
-end
 
 local function BuildStatPatterns()
     if statPatternCache then return statPatternCache end
@@ -992,6 +962,17 @@ local function BuildStatPatterns()
 
     local function Add(key, pattern)
         statPatternCache[#statPatternCache + 1] = { key = key, pattern = pattern }
+    end
+
+    -- %c steht in einigen Vorlagen fuer das Vorzeichen ("%c%s Staerke")
+    local function LongTemplateToPattern(tpl)
+        local pat = sgsub(tpl, "%%c", "\2")
+        pat = sgsub(pat, "%%%d%$[sd]", "\1")
+        pat = sgsub(pat, "%%[sd]", "\1")
+        pat = EscapePattern(pat)
+        pat = sgsub(pat, "\1", "([%%d%%.,]+)")
+        pat = sgsub(pat, "\2", "%%+?")
+        return pat
     end
 
     for _, key in ipairs(STAT_ORDER) do
@@ -1011,16 +992,94 @@ local function BuildStatPatterns()
         end
     end
 
+    -- "Sockelbonus: %s"
+    local sb = _G.ITEM_SOCKET_BONUS or "Socket Bonus: %s"
+    socketBonusPattern = "^" .. TemplateToPattern(sb, "(.+)") .. "$"
+
     return statPatternCache
 end
+
+-- Attributnamen fuer die segmentweise Auswertung, laengste zuerst
+-- ("Ruestungsdurchschlag" vor "Ruestung", "Mana alle 5 Sek." vor "Mana")
+local function BuildSegmentNames()
+    if segmentCache then return segmentCache end
+    segmentCache = {}
+
+    local function AddName(key, name)
+        if name and name ~= "" then
+            local lname = sgsub(slower(name), "%.$", "")
+            segmentCache[#segmentCache + 1] = {
+                key = key, name = lname, esc = EscapePattern(lname),
+            }
+        end
+    end
+
+    for _, key in ipairs(STAT_ORDER) do AddName(key, _G[key]) end
+    AddName("__ALLSTATS", _G.SPELL_STATALL or "All Stats")
+
+    tsort(segmentCache, function(a, b) return #a.name > #b.name end)
+    return segmentCache
+end
+
+local ALL_STATS = { S.STR, S.AGI, S.STA, S.INT, S.SPI }
+
+local function AddStat(stats, key, value)
+    if key == "__ALLSTATS" then
+        for _, k in ipairs(ALL_STATS) do stats[k] = (stats[k] or 0) + value end
+    else
+        stats[key] = (stats[key] or 0) + value
+    end
+end
+
+-- Liest jedes "+Zahl Attributname" einer Zeile. Gibt zurueck, ob etwas gefunden wurde.
+local function ScanSegments(text, stats)
+    local work  = slower(text)
+    local found = false
+
+    for _, seg in ipairs(BuildSegmentNames()) do
+        local init = 1
+        while true do
+            local s, e, num = sfind(work, "%+([%d%.,]+)%s*" .. seg.esc, init)
+            if not s then break end
+
+            -- der Name muss hier enden: kein Buchstabe dahinter
+            local nextc = ssub(work, e + 1, e + 1)
+            if nextc == "" or not smatch(nextc, "%a") then
+                local v = tonumber((sgsub(num, ",", ".")))
+                if v and v > 0 then
+                    AddStat(stats, seg.key, v)
+                    found = true
+                end
+                -- Treffer unkenntlich machen, damit kuerzere Namen nicht
+                -- noch einmal darauf anspringen
+                work = ssub(work, 1, s - 1) .. srep("\1", e - s + 1) .. ssub(work, e + 1)
+            end
+            init = e + 1
+        end
+    end
+    return found
+end
+EG.ScanSegments = function(_, text, stats) return ScanSegments(text, stats) end
 
 -- Kopfzeile eines Ausruestungssets: "Name (2/5)"
 local SET_HEADER_PATTERN = "^.+%s%((%d+)/(%d+)%)$"
 
-EG.tipCache = {}
+-- Zeilen mit diesen Praefixen sind Effekte, keine festen Werte
+local function StartsWithTrigger(text)
+    local list = { ITEM_SPELL_TRIGGER_ONEQUIP, ITEM_SPELL_TRIGGER_ONUSE, ITEM_SPELL_TRIGGER_ONPROC }
+    for _, p in ipairs(list) do
+        if p and p ~= "" and ssub(text, 1, #p) == p then return true end
+    end
+    return false
+end
+
+local function IsUniqueLine(text)
+    return text == (_G.ITEM_UNIQUE or "Unique")
+        or text == (_G.ITEM_UNIQUE_EQUIPPABLE or "Unique-Equipped")
+end
 
 --[[ Einmaliger Durchlauf durch den Tooltip.
-     Rueckgabe: { reason, dps, stats, enchanted }                          ]]
+     Rueckgabe: { reason, dps, stats, hasStats, unique }                   ]]
 function EG:ScanItemTooltip(link)
     if not link then return nil end
 
@@ -1050,11 +1109,16 @@ function EG:ScanItemTooltip(link)
             elseif not IsGrey(fs) then
                 -- Graue Zeilen sind inaktive Sockel- und Setboni.
 
+                if not result.unique and IsUniqueLine(text) then
+                    result.unique = true
+                end
+
                 if not result.dps then
                     local v = smatch(text, dpsPattern)
                     if v then result.dps = tonumber((sgsub(v, ",", "."))) end
                 end
 
+                local matched = false
                 for _, p in ipairs(patterns) do
                     local v = smatch(text, p.pattern)
                     if v then
@@ -1065,7 +1129,19 @@ function EG:ScanItemTooltip(link)
                             result.stats[p.key] = (result.stats[p.key] or 0) + v
                             result.hasStats = true
                         end
+                        matched = true
                         break
+                    end
+                end
+
+                if not matched then
+                    local bonus = smatch(text, socketBonusPattern)
+                    if bonus then
+                        -- aktiver Sockelbonus (inaktiv waere grau und uebersprungen)
+                        if ScanSegments(bonus, result.stats) then result.hasStats = true end
+                    elseif not StartsWithTrigger(text) then
+                        -- Edelstein- und Verzauberungszeilen
+                        if ScanSegments(text, result.stats) then result.hasStats = true end
                     end
                 end
             end
@@ -1085,7 +1161,11 @@ end
 
 --[[ Vollstaendige Itemdaten.
      GetItemInfo() liefert in 3.3.5a 11 Werte; Nr. 11 ist der
-     Haendler-Verkaufspreis pro Einheit.                                   ]]
+     Haendler-Verkaufspreis pro Einheit.
+
+     stats       alles, was zaehlt: Basiswerte, Verzauberung, Steine, Sockelbonus
+     baseStats   nur die Basiswerte aus dem Itemlink
+     extraStats  der Anteil von Verzauberung und Steinen (stats - baseStats)   ]]
 function EG:GetItemData(itemLink)
     if not itemLink or itemLink == "" then return nil end
 
@@ -1114,6 +1194,8 @@ function EG:GetItemData(itemLink)
         sellPrice   = tonumber(sellPrice) or 0,
         id          = tonumber(smatch(itemLink, "item:(%d+)")),
         stats       = {},
+        baseStats   = {},
+        extraStats  = {},
         sockets     = 0,
         isHeirloom  = (quality == HEIRLOOM_QUALITY),
     }
@@ -1131,7 +1213,8 @@ function EG:GetItemData(itemLink)
                 end
             end
             if not isSocket then
-                data.stats[stat] = (tonumber(value) or 0)
+                local key = STAT_ALIAS[stat] or stat
+                data.baseStats[key] = (data.baseStats[key] or 0) + (tonumber(value) or 0)
             end
         end
     end
@@ -1150,7 +1233,10 @@ function EG:GetItemData(itemLink)
     if scan then
         data._tipUsable = (scan.reason == nil)
         data._tipReason = scan.reason
+        data.unique     = scan.unique and true or false
     end
+
+    local withEnchants = not (self.db and self.db.includeEnchants == false)
 
     if data.isHeirloom then
         -- Erbstuecke skalieren mit der Charakterstufe; GetItemStats()
@@ -1160,31 +1246,45 @@ function EG:GetItemData(itemLink)
         data.level = mmin(playerLevel, HEIRLOOM_MAX_LEVEL)
         data.estimated = true
         if scan and scan.hasStats then
-            data.stats = scan.stats
+            for k, v in pairs(scan.stats) do data.stats[k] = v end
+        else
+            for k, v in pairs(data.baseStats) do data.stats[k] = v end
         end
-    elseif scan and scan.hasStats then
-        --[[ Verzauberungen und Sockelsteine stehen nur im Tooltip.
-             Zusammengefuehrt wird ueber das Maximum: der Tooltipwert ist
-             die Summe aus Basiswert, Verzauberung und Steinen und damit
-             normalerweise der groessere. Scheitert das Auslesen einer
-             Zeile, bleibt der Basiswert erhalten - so kann nichts
-             verlorengehen und nichts doppelt gezaehlt werden.            ]]
-        for key, value in pairs(scan.stats) do
-            local base = data.stats[key] or 0
-            if value > base then
-                data.stats[key] = value
-                if base > 0 or data.enchanted then data.hasExtraStats = true end
+    else
+        for k, v in pairs(data.baseStats) do data.stats[k] = v end
+
+        if withEnchants and scan and scan.hasStats then
+            --[[ Verzauberungen und Sockelsteine stehen nur im Tooltip.
+                 Zusammengefuehrt wird ueber das Maximum: der Tooltipwert ist
+                 die Summe aus Basiswert, Verzauberung und Steinen und damit
+                 normalerweise der groessere. Scheitert das Auslesen einer
+                 Zeile, bleibt der Basiswert erhalten - so kann nichts
+                 verlorengehen und nichts doppelt gezaehlt werden.            ]]
+            local socketed = data.enchanted or data.gemCount > 0
+            for key, value in pairs(scan.stats) do
+                local base = data.stats[key] or 0
+                if value > base then
+                    data.stats[key] = value
+                    -- Als "extra" gilt es nur, wenn der Link tatsaechlich
+                    -- Verzauberung oder Steine traegt
+                    if socketed then data.extraStats[key] = value - base end
+                end
             end
         end
     end
+    data.hasExtraStats = next(data.extraStats) ~= nil
 
-    -- Waffen-DPS
-    if equipLoc and (equipLoc == "INVTYPE_WEAPON" or equipLoc == "INVTYPE_2HWEAPON"
-        or equipLoc == "INVTYPE_WEAPONMAINHAND" or equipLoc == "INVTYPE_WEAPONOFFHAND"
-        or equipLoc == "INVTYPE_RANGED" or equipLoc == "INVTYPE_RANGEDRIGHT"
-        or equipLoc == "INVTYPE_THROWN") then
+    -- Waffen-DPS (Nahkampf und Fernkampf getrennt bewertet)
+    if equipLoc and WEAPON_LOC[equipLoc] then
         data.dps = (scan and scan.dps) or 0
+        data.handKind = "MELEE"
+    elseif equipLoc and RANGED_LOC[equipLoc] then
+        data.dps = (scan and scan.dps) or 0
+        data.handKind = "RANGED"
     end
+
+    -- Untertyp-Token, Werkzeuge usw.
+    self:ClassifyItem(data)
 
     -- Cache begrenzen, damit lange Sitzungen nicht wachsen
     itemCacheCount = itemCacheCount + 1
@@ -1215,8 +1315,10 @@ function EG:GetItemIDFromLink(link)
 end
 
 function EG:GetLocalizedStatName(stat)
-    if stat == PSEUDO_DPS    then return L.WEAPON_DPS end
-    if stat == PSEUDO_SOCKET then return L.SOCKETS end
+    if stat == PSEUDO_DPS      then return L.WEAPON_DPS end
+    if stat == PSEUDO_RDPS     then return L.RANGED_DPS end
+    if stat == PSEUDO_SOCKET   then return L.SOCKETS end
+    if stat == PSEUDO_HEIRLOOM then return L.HEIRLOOM_BONUS end
     return _G[stat] or stat
 end
 
@@ -1244,14 +1346,87 @@ function EG:GetEffectiveIlvlWeight()
     return w * factor, w, factor
 end
 
+--[[ Erbstueck-Aufschlag auf die Wertung.
+
+     Erbstuecke wachsen mit der Charakterstufe und geben zusaetzlich
+     Erfahrung; ein normales Item der Levelphase kann dagegen nicht
+     anhalten. Statt einer starren Regel ("Erbstueck gewinnt immer") bekommt
+     ein Erbstueck deshalb einen Aufschlag auf seine Wertung:
+
+       * bis Stufe 60 der volle Aufschlag (Standard x1.5)
+       * zwischen 60 und 80 linear abnehmend auf x1.0
+       * ab Stufe 80 keiner - dort skalieren Erbstuecke nicht mehr
+
+     Ein Erbstueck mit unbrauchbaren Werten (Staerke auf einem Heiler) bleibt
+     damit trotzdem schlechter als ein passendes normales Item.            ]]
+function EG:GetHeirloomFactor()
+    local db = self.db or DEFAULTS
+    if db.protectHeirlooms == false then return 1 end
+    local level = UnitLevel("player") or 1
+    if level >= HEIRLOOM_MAX_LEVEL then return 1 end
+    local bonus = tonumber(db.heirloomBonus) or DEFAULTS.heirloomBonus
+    if bonus <= 1 then return 1 end
+    local t = (HEIRLOOM_MAX_LEVEL - level) / 20
+    if t > 1 then t = 1 end
+    return 1 + (bonus - 1) * t
+end
+
+-- Gilt die Erbstueckregel gerade? (Anzeige, Slash-Befehle)
+function EG:HeirloomProtectionActive()
+    return self:GetHeirloomFactor() > 1
+end
+
+local GEM_PRIMARY = { S.STR, S.AGI, S.INT, S.SP, S.STA }
+
+--[[ Wert eines freien Sockelplatzes.
+
+     Automatisch: ein typischer Stein der Stufe (ca. 0.22 Punkte je Stufe,
+     also rund 17 auf Stufe 80) mal dem staerksten Hauptattributgewicht des
+     Profils, mit 10 % Abschlag fuer nicht passende Sockelfarbe. Ein fester
+     Wert laesst sich mit /eg socket <zahl> setzen.                        ]]
+function EG:GetSocketPoints(weights)
+    local db = self.db or DEFAULTS
+    local override = tonumber(db.socketValue)
+    if override then return override end
+
+    weights = weights or self:GetProfile()
+    local best = 0
+    for _, key in ipairs(GEM_PRIMARY) do
+        local w = weights[key]
+        if w and w > best then best = w end
+    end
+    local level = mmin(UnitLevel("player") or 1, HEIRLOOM_MAX_LEVEL)
+    return level * 0.22 * best * 0.9
+end
+
+--[[ Gewicht der Waffen-DPS: Nahkampf (__DPS) oder Fernkampf (__RDPS, sonst
+     __DPS). Ein in den Einstellungen gesetztes dpsWeight gilt fuer beide.  ]]
+function EG:GetHandWeight(weights, kind)
+    local db = self.db or DEFAULTS
+    local override = tonumber(db.dpsWeight)
+    if override then return override end
+    weights = weights or {}
+    if kind == "RANGED" then
+        return weights[PSEUDO_RDPS] or weights[PSEUDO_DPS] or 0
+    end
+    return weights[PSEUDO_DPS] or 0
+end
+
+local function IsOffhandWeapon(item, slotID)
+    return slotID == 17 and item.handKind == "MELEE"
+end
+
 --[[ Liefert Wertung + vollstaendige Berechnungsgrundlage.
-     breakdown = Liste von { key, label, value, weight, points }           ]]
-function EG:GetScoreBreakdown(item)
+     breakdown = Liste von { key, label, value, weight, points }
+
+     slotID ist nur bei Nebenhand-Waffen von Belang: sie verursachen im
+     Beidhaendig-Kampf nur den halben Schaden, ihre DPS zaehlen deshalb nur
+     zur Haelfte. Fuer alle anderen Items ist der Slot ohne Bedeutung.       ]]
+function EG:GetScoreBreakdown(item, slotID)
     local rows, total = {}, 0
     if not item then return rows, 0 end
 
     local weights = self:GetProfile()
-    local db = self.db or DEFAULTS
 
     -- 1) Basis aus der Gegenstandsstufe (mit Charakterstufe skaliert)
     local ilvlWeight = self:GetEffectiveIlvlWeight()
@@ -1300,21 +1475,23 @@ function EG:GetScoreBreakdown(item)
     end
 
     -- 4) Waffen-DPS
-    if item.dps and item.dps > 0 then
-        local w = tonumber(db.dpsWeight) or weights[PSEUDO_DPS] or 0
+    if item.dps and item.dps > 0 and item.handKind then
+        local w = self:GetHandWeight(weights, item.handKind)
+        if IsOffhandWeapon(item, slotID) then w = w * OFFHAND_FACTOR end
         if w ~= 0 then
             local points = item.dps * w
             total = total + points
             rows[#rows + 1] = {
-                key = PSEUDO_DPS, label = L.WEAPON_DPS,
+                key = (item.handKind == "RANGED") and PSEUDO_RDPS or PSEUDO_DPS,
+                label = (item.handKind == "RANGED") and L.RANGED_DPS or L.WEAPON_DPS,
                 value = item.dps, weight = w, points = points,
             }
         end
     end
 
-    -- 5) Freie Sockelplaetze
+    -- 5) Freie Sockelplaetze (gefuellte stehen schon in den Attributen)
     if item.sockets and item.sockets > 0 then
-        local w = tonumber(db.socketValue) or DEFAULTS.socketValue
+        local w = self:GetSocketPoints(weights)
         if w ~= 0 then
             local points = item.sockets * w
             total = total + points
@@ -1322,6 +1499,19 @@ function EG:GetScoreBreakdown(item)
                 key = PSEUDO_SOCKET, label = L.SOCKETS,
                 value = item.sockets, weight = w, points = points,
             }
+        end
+    end
+
+    -- 6) Erbstueck-Aufschlag
+    if item.isHeirloom then
+        local f = self:GetHeirloomFactor()
+        if f > 1 then
+            local points = total * (f - 1)
+            rows[#rows + 1] = {
+                key = PSEUDO_HEIRLOOM, label = L.HEIRLOOM_BONUS,
+                value = total, weight = f - 1, points = points,
+            }
+            total = total + points
         end
     end
 
@@ -1334,11 +1524,13 @@ end
      Attribut x Gewicht), deshalb ergibt die Summe der Einzelwerte,
      multipliziert mit den Gewichten, exakt dieselbe Gesamtwertung wie das
      Aufaddieren der einzelnen Itemwertungen. Damit laesst sich die
-     komplette Ausruestung unter beliebigen Gewichten durchrechnen.       ]]
+     komplette Ausruestung unter beliebigen Gewichten durchrechnen. Der
+     Erbstueck-Aufschlag ist bewusst nicht enthalten - er gehoert zum
+     Itemvergleich, nicht zum Profilvergleich.                             ]]
 function EG:GetEquippedTotals(force)
     if self.equippedTotals and not force then return self.equippedTotals end
 
-    local t = { __ILVL = 0, __DPS = 0, __SOCKET = 0, __COUNT = 0 }
+    local t = { __ILVL = 0, __DPS = 0, __RDPS = 0, __SOCKET = 0, __COUNT = 0 }
     for slot = 1, MAX_EQUIP_SLOT do
         local link = GetInventoryItemLink("player", slot)
         if link then
@@ -1346,8 +1538,13 @@ function EG:GetEquippedTotals(force)
             if item then
                 t.__COUNT  = t.__COUNT + 1
                 t.__ILVL   = t.__ILVL + (item.level or 0)
-                t.__DPS    = t.__DPS + (item.dps or 0)
                 t.__SOCKET = t.__SOCKET + (item.sockets or 0)
+                if item.handKind == "MELEE" then
+                    local f = IsOffhandWeapon(item, slot) and OFFHAND_FACTOR or 1
+                    t.__DPS = t.__DPS + (item.dps or 0) * f
+                elseif item.handKind == "RANGED" then
+                    t.__RDPS = t.__RDPS + (item.dps or 0)
+                end
                 if item.stats then
                     for k, v in pairs(item.stats) do
                         t[k] = (t[k] or 0) + v
@@ -1367,6 +1564,8 @@ end
 
 --[[ Berechnungsgrundlage fuer eine beliebige Wertesammlung unter
      beliebigen Gewichten. Wird fuer den Profilvergleich benutzt.         ]]
+local TOTAL_META = { __ILVL = true, __DPS = true, __RDPS = true, __SOCKET = true, __COUNT = true }
+
 function EG:BuildTotalsBreakdown(totals, weights)
     local rows, total = {}, 0
     if not totals or not weights then return rows, 0 end
@@ -1393,8 +1592,7 @@ function EG:BuildTotalsBreakdown(totals, weights)
     end
 
     for key, v in pairs(totals) do
-        if not seen[key] and key ~= "__ILVL" and key ~= "__DPS"
-            and key ~= "__SOCKET" and key ~= "__COUNT" then
+        if not seen[key] and not TOTAL_META[key] then
             local w = weights[key]
             if v ~= 0 and w and w ~= 0 then
                 local pts = v * w
@@ -1405,16 +1603,24 @@ function EG:BuildTotalsBreakdown(totals, weights)
         end
     end
 
-    local dw = weights[PSEUDO_DPS]
-    if (totals.__DPS or 0) > 0 and dw and dw ~= 0 then
+    local dw = self:GetHandWeight(weights, "MELEE")
+    if (totals.__DPS or 0) > 0 and dw ~= 0 then
         local pts = totals.__DPS * dw
         total = total + pts
         rows[#rows + 1] = { key = PSEUDO_DPS, label = L.WEAPON_DPS,
                             value = totals.__DPS, weight = dw, points = pts }
     end
 
-    local sw = tonumber(self.db and self.db.socketValue) or DEFAULTS.socketValue
-    if (totals.__SOCKET or 0) > 0 and sw and sw ~= 0 then
+    local rw = self:GetHandWeight(weights, "RANGED")
+    if (totals.__RDPS or 0) > 0 and rw ~= 0 then
+        local pts = totals.__RDPS * rw
+        total = total + pts
+        rows[#rows + 1] = { key = PSEUDO_RDPS, label = L.RANGED_DPS,
+                            value = totals.__RDPS, weight = rw, points = pts }
+    end
+
+    local sw = self:GetSocketPoints(weights)
+    if (totals.__SOCKET or 0) > 0 and sw ~= 0 then
         local pts = totals.__SOCKET * sw
         total = total + pts
         rows[#rows + 1] = { key = PSEUDO_SOCKET, label = L.SOCKETS,
@@ -1429,24 +1635,25 @@ function EG:GetItemScoreUnder(item, weights)
     if not item or not weights then return 0 end
     local saved = self.profileCache
     self.profileCache = { weights = weights, name = "tmp", profile = "tmp" }
-    local _, total = self:GetScoreBreakdown(item)
+    local ok, _, total = pcall(self.GetScoreBreakdown, self, item)
     self.profileCache = saved
-    return total
+    return ok and total or 0
 end
 
-function EG:GetItemScore(item)
+function EG:GetItemScore(item, slotID)
     if not item then return 0 end
     local key = item.link
     if key then
+        local sk = IsOffhandWeapon(item, slotID) and "o" or "m"
         local _, _, sig = self:GetProfile()
-        local cacheKey = sig .. "|" .. key
+        local cacheKey = sig .. "|" .. key .. "|" .. sk
         local hit = self.scoreCache[cacheKey]
         if hit then return hit end
-        local _, total = self:GetScoreBreakdown(item)
+        local _, total = self:GetScoreBreakdown(item, slotID)
         self.scoreCache[cacheKey] = total
         return total
     end
-    local _, total = self:GetScoreBreakdown(item)
+    local _, total = self:GetScoreBreakdown(item, slotID)
     return total
 end
 
@@ -1454,6 +1661,78 @@ function EG:GetLinkScore(link)
     local item = self:GetItemData(link)
     if not item then return 0 end
     return self:GetItemScore(item)
+end
+
+--[[ Punkte, die ein Item allein durch Verzauberung und Sockelsteine traegt.
+     Wichtig fuer die Einordnung: ein neues Item kommt unverzaubert, das
+     angelegte ist es meist.                                               ]]
+function EG:GetExtraPoints(item)
+    if not (item and item.extraStats and item.hasExtraStats) then return 0 end
+    local weights = self:GetProfile()
+    local pts = 0
+    for key, v in pairs(item.extraStats) do
+        local w = weights[key]
+        if w and w ~= 0 then pts = pts + v * w end
+    end
+    return pts
+end
+
+--[[ Attribut-Unterschiede zwischen einem Kandidaten und den Items, die er
+     ersetzt. targets = Liste von { item, slotID }. Rueckgabe: sortierte Liste
+     { key, label, delta, points } - nur Attribute, die das Profil bewertet. ]]
+function EG:GetStatDiff(item, targets)
+    local out = {}
+    if not item then return out end
+    local weights = self:GetProfile()
+
+    local tstats, tdps, trdps = {}, 0, 0
+    for _, t in ipairs(targets or {}) do
+        local ti = t.item
+        if ti then
+            for k, v in pairs(ti.stats or {}) do tstats[k] = (tstats[k] or 0) + v end
+            if ti.handKind == "MELEE" then
+                tdps = tdps + (ti.dps or 0) * (IsOffhandWeapon(ti, t.slotID) and OFFHAND_FACTOR or 1)
+            elseif ti.handKind == "RANGED" then
+                trdps = trdps + (ti.dps or 0)
+            end
+        end
+    end
+
+    local keys, seen = {}, {}
+    for k in pairs(item.stats or {}) do if not seen[k] then seen[k] = true; keys[#keys + 1] = k end end
+    for k in pairs(tstats) do if not seen[k] then seen[k] = true; keys[#keys + 1] = k end end
+
+    for _, k in ipairs(keys) do
+        local w = weights[k]
+        if w and w ~= 0 then
+            local d = ((item.stats and item.stats[k]) or 0) - (tstats[k] or 0)
+            if d ~= 0 then
+                out[#out + 1] = { key = k, label = self:GetLocalizedStatName(k),
+                                  delta = d, points = d * w }
+            end
+        end
+    end
+
+    -- Waffen-DPS
+    if item.handKind then
+        local cand = item.dps or 0
+        local w = self:GetHandWeight(weights, item.handKind)
+        local have = (item.handKind == "RANGED") and trdps or tdps
+        local d = cand - have
+        if w ~= 0 and d ~= 0 and (cand > 0 or have > 0) then
+            out[#out + 1] = {
+                key = (item.handKind == "RANGED") and PSEUDO_RDPS or PSEUDO_DPS,
+                label = (item.handKind == "RANGED") and L.RANGED_DPS or L.WEAPON_DPS,
+                delta = d, points = d * w, decimals = 1,
+            }
+        end
+    end
+
+    tsort(out, function(a, b)
+        local pa, pb = (a.points < 0) and -a.points or a.points, (b.points < 0) and -b.points or b.points
+        return pa > pb
+    end)
+    return out
 end
 
 ------------------------------------------------------------------------------
@@ -1469,18 +1748,11 @@ local SLOT_NAME_GLOBALS = {
     [19]="TABARDSLOT",
 }
 
-local SLOT_NAME_FALLBACK_DE = {
-    [1]="Kopf", [2]="Hals", [3]="Schultern", [4]="Hemd", [5]="Brust",
-    [6]="Taille", [7]="Beine", [8]="F\195\188\195\159e", [9]="Handgelenke", [10]="H\195\164nde",
-    [11]="Ring 1", [12]="Ring 2", [13]="Schmuck 1", [14]="Schmuck 2",
-    [15]="R\195\188cken", [16]="Waffenhand", [17]="Schildhand", [18]="Distanz",
-    [19]="Wappenrock",
-}
-
-local SLOT_NAME_FALLBACK_EN = {
+-- Notnamen, falls ein Global fehlt (kommt in der Praxis nicht vor)
+local SLOT_NAME_FALLBACK = {
     [1]="Head", [2]="Neck", [3]="Shoulder", [4]="Shirt", [5]="Chest",
     [6]="Waist", [7]="Legs", [8]="Feet", [9]="Wrist", [10]="Hands",
-    [11]="Finger 1", [12]="Finger 2", [13]="Trinket 1", [14]="Trinket 2",
+    [11]="Finger", [12]="Finger", [13]="Trinket", [14]="Trinket",
     [15]="Back", [16]="Main Hand", [17]="Off Hand", [18]="Ranged",
     [19]="Tabard",
 }
@@ -1500,8 +1772,7 @@ local function RawSlotName(slotID)
     local g = SLOT_NAME_GLOBALS[slotID]
     local name = g and _G[g]
     if name and name ~= "" then return name end
-    local fb = (GetLocale() == "deDE") and SLOT_NAME_FALLBACK_DE or SLOT_NAME_FALLBACK_EN
-    return fb[slotID] or tostring(slotID)
+    return SLOT_NAME_FALLBACK[slotID] or tostring(slotID)
 end
 
 function EG:GetSlotName(slotID)
@@ -1521,23 +1792,55 @@ function EG:GetSlotName(slotID)
     return name
 end
 
--- Klassen, die grundsaetzlich beidhaendig kaempfen koennen
+-- Klassen, die grundsaetzlich beidhaendig kaempfen koennen (Mindeststufe)
 local DUAL_WIELD_CLASSES = {
     WARRIOR = 20, ROGUE = 10, HUNTER = 20, SHAMAN = 40, DEATHKNIGHT = 55,
 }
 
+--[[ Beidhaendigkeit.
+     Der Schamane lernt sie nur ueber das Verstaerkungs-Talent; erkannt wird
+     es am (sprachunabhaengigen) Talentsymbol. Sicherheitsnetz fuer alle: ist
+     in der Schildhand bereits eine Waffe angelegt, geht es offenbar.      ]]
 function EG:CanDualWield()
     local _, class = UnitClass("player")
     local req = DUAL_WIELD_CLASSES[class or ""]
     if not req then return false end
-    if (UnitLevel("player") or 1) >= req then return true end
-    -- Sicherheitsnetz: Waffe in der Schildhand angelegt
+
     local off = GetInventoryItemLink("player", 17)
     if off then
         local d = self:GetItemData(off)
-        if d and d.equipLoc == "INVTYPE_WEAPON" then return true end
+        if d and (d.equipLoc == "INVTYPE_WEAPON" or d.equipLoc == "INVTYPE_WEAPONOFFHAND") then
+            return true
+        end
     end
-    return false
+
+    if (UnitLevel("player") or 1) < req then return false end
+
+    if class == "SHAMAN" then
+        if self.hasDW == nil then
+            self.hasDW = self:HasTalentIcon("Ability_DualWield")
+        end
+        return self.hasDW
+    end
+    return true
+end
+
+--[[ Titanengriff: der Krieger fuehrt zwei Zweihandwaffen. Erkannt am
+     Talentsymbol oder - als Sicherheitsnetz - daran, dass bereits in beiden
+     Haenden eine Zweihandwaffe liegt.                                      ]]
+function EG:HasTitansGrip()
+    local _, class = UnitClass("player")
+    if class ~= "WARRIOR" then return false end
+
+    local mh, oh = self:GetEquippedData(16), self:GetEquippedData(17)
+    if mh and oh and mh.equipLoc == "INVTYPE_2HWEAPON" and oh.equipLoc == "INVTYPE_2HWEAPON" then
+        return true
+    end
+
+    if self.hasTG == nil then
+        self.hasTG = self:HasTalentIcon("TitansGrip")
+    end
+    return self.hasTG
 end
 
 local EQUIP_LOC_SLOTS = {
@@ -1567,12 +1870,11 @@ local EQUIP_LOC_SLOTS = {
     INVTYPE_RELIC           = { 18 },
     INVTYPE_TABARD          = { 19 },
 }
+EG.EQUIP_LOC_SLOTS = EQUIP_LOC_SLOTS
 
---[[ Liefert die relevanten Ausruestungsslots.
-     Rueckgabe: slots (Tabelle), mode
-       mode = "SINGLE"  ein Slot
-       mode = "EITHER"  einer von mehreren (Ringe, Schmuck, Einhandwaffen)
-       mode = "BOTH"    ersetzt alle genannten Slots (Zweihandwaffe)       ]]
+-- Hemd und Wappenrock tragen keine Werte - sie werden nie als Verbesserung markiert
+local COSMETIC_LOC = { INVTYPE_BODY = true, INVTYPE_TABARD = true }
+
 local OFFHAND_LOCS = {
     INVTYPE_SHIELD        = true,
     INVTYPE_HOLDABLE      = true,
@@ -1585,6 +1887,31 @@ function EG:HasTwoHandEquipped()
     return (mh and mh.equipLoc == "INVTYPE_2HWEAPON") and true or false
 end
 
+--[[ Darf eine Einhandwaffe auch in die Schildhand?
+
+     Beidhaendigkeit allein reicht nicht: ein Schutzkrieger kann zwar
+     beidhaendig kaempfen, traegt aber ein Schild. Fuer Tank-, Heiler- und
+     Zauberprofile gilt die Schildhand deshalb nur dann als Waffenplatz, wenn
+     dort schon eine Waffe liegt.                                          ]]
+function EG:WantsDualWield()
+    if not self:CanDualWield() then return false end
+    local spec = self:GetActiveSpec()
+    local role = spec and spec.role
+    if role == "TANK" or role == "HEAL" or role == "CASTER" then
+        local oh = self:GetEquippedData(17)
+        return (oh and (oh.equipLoc == "INVTYPE_WEAPON" or oh.equipLoc == "INVTYPE_WEAPONOFFHAND")) and true or false
+    end
+    return true
+end
+
+--[[ Liefert die relevanten Ausruestungsslots.
+     Rueckgabe: slots (Tabelle), mode, candSlot
+       mode = "SINGLE"  ein Slot
+       mode = "EITHER"  einer von mehreren (Ringe, Schmuck, Einhandwaffen,
+                        Zweihandwaffen mit Titanengriff)
+       mode = "BOTH"    ersetzt alle genannten Slots (Zweihandwaffe, oder ein
+                        Schild bei gefuehrter Zweihandwaffe)
+       candSlot         Slot, in dem der Kandidat bei "BOTH" landet          ]]
 function EG:GetEquipSlots(itemOrLink)
     local item = type(itemOrLink) == "table" and itemOrLink or self:GetItemData(itemOrLink)
     if not item or not item.equipLoc then return nil end
@@ -1594,7 +1921,10 @@ function EG:GetEquipSlots(itemOrLink)
     if not slots then return nil end
 
     if loc == "INVTYPE_2HWEAPON" then
-        return { 16, 17 }, "BOTH"
+        if self:HasTitansGrip() then
+            return { 16, 17 }, "EITHER"
+        end
+        return { 16, 17 }, "BOTH", 16
     end
 
     --[[ Solange eine Zweihandwaffe gefuehrt wird, ist die Schildhand nicht
@@ -1605,11 +1935,9 @@ function EG:GetEquipSlots(itemOrLink)
          Schildhand zusammen, nicht gegen den scheinbar leeren Slot 17.
          Sonst gilt jedes beliebige Nebenhand-Item als Verbesserung, weil
          der leere Slot mit 0 Punkten bewertet wird.                       ]]
-    local twoHand = self:HasTwoHandEquipped()
-
     if OFFHAND_LOCS[loc] then
-        if twoHand then
-            return { 16, 17 }, "BOTH"
+        if self:HasTwoHandEquipped() then
+            return { 16, 17 }, "BOTH", 17
         end
         return { 17 }, "SINGLE"
     end
@@ -1617,10 +1945,10 @@ function EG:GetEquipSlots(itemOrLink)
     if loc == "INVTYPE_WEAPON" then
         -- Einhandwaffe: bei gefuehrter Zweihandwaffe geht sie nur in die
         -- Waffenhand und ersetzt dort die Zweihandwaffe.
-        if twoHand then
+        if self:HasTwoHandEquipped() and not self:HasTitansGrip() then
             return { 16 }, "SINGLE"
         end
-        if self:CanDualWield() then
+        if self:WantsDualWield() then
             return { 16, 17 }, "EITHER"
         end
         return { 16 }, "SINGLE"
@@ -1655,56 +1983,129 @@ end
 -- 10  Verwendbarkeit
 ------------------------------------------------------------------------------
 
---[[ Untertyp-Namen -> sprachunabhaengiges Token.
-     Das Original verglich direkt gegen lokalisierte Strings; hier werden
-     enUS und deDE (inklusive gaengiger Schreibvarianten) auf Tokens
-     abgebildet. Zusaetzlich prueft der Tooltip-Scan die tatsaechliche
-     Verwendbarkeit, was auch Klassenbindungen abdeckt.                    ]]
-local SUBTYPE_TOKEN = {}
+--[[ Untertypen -> sprachunabhaengiges Token (CLOTH, PLATE, AXE2, ...).
 
-local function RegisterSubtype(token, ...)
-    for i = 1, select("#", ...) do
-        local name = select(i, ...)
-        if name and name ~= "" then
-            SUBTYPE_TOKEN[slower(name)] = token
+     GetItemInfo() liefert den Untertyp nur als lokalisierten Text. Damit die
+     Zuordnung in jeder Clientsprache klappt, wird sie in dieser Reihenfolge
+     aufgebaut:
+
+       1. Aus den Kategorielisten des Auktionshauses, die der Client in
+          seiner Sprache und in fester Reihenfolge fuehrt
+          (GetAuctionItemSubClasses). Das braucht keinerlei Textkenntnis.
+       2. Aus den Namen in den Sprachdateien (SUBTYPE_<TOKEN>, mehrere
+          Schreibweisen mit | getrennt) fuer alles, was Schritt 1 nicht
+          liefert.
+
+     Jedes Token wird zusaetzlich gegen den Ausruestungsplatz des Items
+     geprueft; passt es nicht, wird es verworfen. Faellt die Zuordnung
+     dadurch mehrfach auf, wird Schritt 1 abgeschaltet.                    ]]
+local WEAPON_SUB_ORDER = {
+    "AXE1", "AXE2", "BOW", "GUN", "MACE1", "MACE2", "POLEARM", "SWORD1", "SWORD2",
+    "STAFF", "FIST", "MISC", "DAGGER", "THROWN", "CROSSBOW", "WAND", "FISHING",
+}
+local ARMOR_SUB_ORDER = {
+    "MISC", "CLOTH", "LEATHER", "MAIL", "PLATE", "SHIELD", "LIBRAM", "IDOL", "TOTEM", "SIGIL",
+}
+EG.WEAPON_SUB_ORDER = WEAPON_SUB_ORDER
+EG.ARMOR_SUB_ORDER  = ARMOR_SUB_ORDER
+
+local ALL_TOKENS = {}
+for _, t in ipairs(WEAPON_SUB_ORDER) do ALL_TOKENS[t] = true end
+for _, t in ipairs(ARMOR_SUB_ORDER)  do ALL_TOKENS[t] = true end
+
+local SUBTYPE_TOKEN = {}     -- kleingeschriebener Name -> Token
+local subtypeSource = {}     -- Token -> "client" | "lang"
+
+local function RegisterSubtype(token, name, source)
+    if name and name ~= "" then
+        local key = slower(name)
+        if not SUBTYPE_TOKEN[key] then
+            SUBTYPE_TOKEN[key] = token
+            subtypeSource[token] = subtypeSource[token] or source
         end
     end
 end
 
--- Ruestung
-RegisterSubtype("CLOTH",    "Cloth", "Stoff")
-RegisterSubtype("LEATHER",  "Leather", "Leder")
-RegisterSubtype("MAIL",     "Mail", "Schwere Ruestung", "Schwere R\195\188stung",
-                            "Kettenruestung", "Kettenr\195\188stung", "Kette")
-RegisterSubtype("PLATE",    "Plate", "Platte", "Plattenruestung", "Plattenr\195\188stung")
-RegisterSubtype("SHIELD",   "Shields", "Shield", "Schilde", "Schild")
-RegisterSubtype("LIBRAM",   "Librams", "Libram", "Libramme", "Buchband")
-RegisterSubtype("IDOL",     "Idols", "Idol", "Goetzen", "G\195\182tzen", "Goetze")
-RegisterSubtype("TOTEM",    "Totems", "Totem")
-RegisterSubtype("SIGIL",    "Sigils", "Sigil", "Sigelrunen", "Sigelrune")
-RegisterSubtype("MISC",     "Miscellaneous", "Verschiedenes", "Sonstiges")
+-- Welche Untertypen sind an welchem Ausruestungsplatz ueberhaupt moeglich?
+local ARMOR_TOKENS = { CLOTH = true, LEATHER = true, MAIL = true, PLATE = true, MISC = true }
+local LOC_TOKENS = {
+    INVTYPE_HEAD = ARMOR_TOKENS, INVTYPE_SHOULDER = ARMOR_TOKENS, INVTYPE_CHEST = ARMOR_TOKENS,
+    INVTYPE_ROBE = ARMOR_TOKENS, INVTYPE_WAIST = ARMOR_TOKENS, INVTYPE_LEGS = ARMOR_TOKENS,
+    INVTYPE_FEET = ARMOR_TOKENS, INVTYPE_WRIST = ARMOR_TOKENS, INVTYPE_HAND = ARMOR_TOKENS,
+    INVTYPE_CLOAK = ARMOR_TOKENS,
+    INVTYPE_SHIELD = { SHIELD = true },
+    INVTYPE_RELIC = { LIBRAM = true, IDOL = true, TOTEM = true, SIGIL = true },
+    INVTYPE_THROWN = { THROWN = true },
+    INVTYPE_RANGED = { BOW = true, CROSSBOW = true, GUN = true },
+    INVTYPE_RANGEDRIGHT = { GUN = true, CROSSBOW = true, WAND = true, BOW = true },
+    INVTYPE_2HWEAPON = { AXE2 = true, MACE2 = true, SWORD2 = true, POLEARM = true, STAFF = true,
+                         FISHING = true, MISC = true, FIST = true },
+    INVTYPE_WEAPON = { AXE1 = true, MACE1 = true, SWORD1 = true, DAGGER = true, FIST = true, MISC = true },
+    INVTYPE_WEAPONMAINHAND = { AXE1 = true, MACE1 = true, SWORD1 = true, DAGGER = true, FIST = true, MISC = true },
+    INVTYPE_WEAPONOFFHAND  = { AXE1 = true, MACE1 = true, SWORD1 = true, DAGGER = true, FIST = true, MISC = true },
+}
 
--- Waffen
-RegisterSubtype("AXE1",     "One-Handed Axes", "Einhandaexte", "Einhand\195\164xte", "Aexte", "\195\132xte")
-RegisterSubtype("AXE2",     "Two-Handed Axes", "Zweihandaexte", "Zweihand\195\164xte")
-RegisterSubtype("MACE1",    "One-Handed Maces", "Einhandstreitkolben")
-RegisterSubtype("MACE2",    "Two-Handed Maces", "Zweihandstreitkolben")
-RegisterSubtype("SWORD1",   "One-Handed Swords", "Einhandschwerter")
-RegisterSubtype("SWORD2",   "Two-Handed Swords", "Zweihandschwerter")
-RegisterSubtype("DAGGER",   "Daggers", "Dolche", "Dolch")
-RegisterSubtype("FIST",     "Fist Weapons", "Faustwaffen", "Faustwaffe")
-RegisterSubtype("POLEARM",  "Polearms", "Stangenwaffen", "Stangenwaffe")
-RegisterSubtype("STAFF",    "Staves", "Staff", "Staebe", "St\195\164be", "Stab")
-RegisterSubtype("BOW",      "Bows", "Bow", "Bogen", "Boegen", "B\195\182gen")
-RegisterSubtype("GUN",      "Guns", "Gun", "Schusswaffen", "Schusswaffe")
-RegisterSubtype("CROSSBOW", "Crossbows", "Armbrueste", "Armbr\195\188ste", "Armbrust")
-RegisterSubtype("WAND",     "Wands", "Zauberstaebe", "Zauberst\195\164be", "Zauberstab")
-RegisterSubtype("THROWN",   "Thrown", "Wurfwaffen", "Wurfwaffe")
-RegisterSubtype("FISHING",  "Fishing Poles", "Angelruten", "Angelrute")
+function EG:BuildSubtypeTokens(useClientLists)
+    SUBTYPE_TOKEN, subtypeSource = {}, {}
+
+    if useClientLists and GetAuctionItemSubClasses then
+        local function Map(classIndex, order)
+            local list = { GetAuctionItemSubClasses(classIndex) }
+            if #list ~= #order then return false end
+            for i, name in ipairs(list) do RegisterSubtype(order[i], name, "client") end
+            return true
+        end
+        self.subtypeFromClient = (Map(1, WEAPON_SUB_ORDER) and Map(2, ARMOR_SUB_ORDER)) and true or false
+    else
+        self.subtypeFromClient = false
+    end
+
+    -- Namen aus den Sprachdateien: Clientsprache zuerst, dann Englisch
+    for token in pairs(ALL_TOKENS) do
+        local key = "SUBTYPE_" .. token
+        for _, name in ipairs(SplitAliases(L[key] ~= key and L[key] or "")) do
+            RegisterSubtype(token, name, "lang")
+        end
+        local en = EasyGearLocales and EasyGearLocales.enUS
+        if en and en[key] then
+            for _, name in ipairs(SplitAliases(en[key])) do RegisterSubtype(token, name, "lang") end
+        end
+    end
+    self.subtypeBuilt = true
+    self.subtypeMismatch = 0
+end
 
 function EG:GetSubtypeToken(subType)
-    if not subType then return nil end
+    if not subType or subType == "" then return nil end
+    if not self.subtypeBuilt then self:BuildSubtypeTokens(true) end
     return SUBTYPE_TOKEN[slower(subType)]
+end
+
+--[[ Ergaenzt ein Item um sein Untertyp-Token und markiert Werkzeuge
+     (Angelruten, Spitzhacken ...), die nie als Verbesserung gelten.        ]]
+function EG:ClassifyItem(data)
+    local token = self:GetSubtypeToken(data.itemSubType)
+
+    -- Plausibilitaet: passt das Token zum Ausruestungsplatz?
+    local allowed = data.equipLoc and LOC_TOKENS[data.equipLoc]
+    if token and allowed and not allowed[token] then
+        self.subtypeMismatch = (self.subtypeMismatch or 0) + 1
+        if self.subtypeMismatch == 3 and self.subtypeFromClient then
+            -- Die Reihenfolge der Auktionshaus-Listen stimmt hier offenbar
+            -- nicht - nur noch die Namen aus den Sprachdateien benutzen.
+            self:BuildSubtypeTokens(false)
+            self.subtypeMismatch = 3
+            if self.itemCache then self.itemCache = {} end
+        end
+        token = nil
+    end
+    -- Ein Schild ist immer ein Schild, egal wie der Untertyp heisst
+    if data.equipLoc == "INVTYPE_SHIELD" and not token then token = "SHIELD" end
+
+    data.token = token
+    data.isCosmetic = COSMETIC_LOC[data.equipLoc] and true or false
+    data.isTool = (data.handKind == "MELEE" and (token == "FISHING" or token == "MISC")) and true or false
+    return data
 end
 
 -- Ruestungsklasse -> ab welcher Charakterstufe tragbar
@@ -1737,9 +2138,28 @@ local WEAPON_PROFICIENCY = {
     DRUID   = { DAGGER=1, FIST=1, MACE1=1, MACE2=1, POLEARM=1, STAFF=1 },
     DEATHKNIGHT = { AXE1=1, AXE2=1, MACE1=1, MACE2=1, SWORD1=1, SWORD2=1, POLEARM=1 },
 }
+EG.ARMOR_PROFICIENCY  = ARMOR_PROFICIENCY
+EG.WEAPON_PROFICIENCY = WEAPON_PROFICIENCY
 
--- Untertypen, die jede Klasse tragen kann (Hals, Ring, Schmuck, Umhang, ...)
+-- Untertypen, die jede Klasse tragen kann (Hals, Ring, Schmuck, Halteitems, ...)
 local FREE_TOKENS = { MISC = true, FISHING = true }
+
+--[[ Ab welcher Stufe darf die Klasse dieses Token tragen? nil = nie.
+
+     Erbstueck-Ruestung wechselt mit Stufe 40 die Klasse: Kette zaehlt
+     darunter als Leder, Platte als Kette. Ein Schamane kann die
+     Todesbotenbrustplatte also ab Stufe 1 tragen, Krieger und Paladine die
+     Plattenteile ebenfalls. Sie koennen es, sobald sie die Ruestungsklasse
+     ueberhaupt beherrschen - die Stufenanforderung entfaellt.             ]]
+function EG:GetProficiencyLevel(class, token, heirloom)
+    if not token or FREE_TOKENS[token] then return 1 end
+    local armorReq  = ARMOR_PROFICIENCY[class]  and ARMOR_PROFICIENCY[class][token]
+    local weaponReq = WEAPON_PROFICIENCY[class] and WEAPON_PROFICIENCY[class][token]
+    local req = armorReq or weaponReq
+    if not req then return nil end
+    if heirloom and (token == "MAIL" or token == "PLATE") then req = 1 end
+    return req
+end
 
 --[[ Rueckgabe: usable (bool), reason (string|nil), levelTooLow (bool)     ]]
 function EG:CanUseItem(itemOrLink)
@@ -1765,13 +2185,10 @@ function EG:CanUseItem(itemOrLink)
         return not levelTooLow, levelTooLow and sformat(L.R_LEVEL, item.minLevel) or nil, levelTooLow
     end
 
-    local token = self:GetSubtypeToken(item.itemSubType)
+    local token = item.token
 
     if token and not FREE_TOKENS[token] then
-        local armorReq  = ARMOR_PROFICIENCY[class]  and ARMOR_PROFICIENCY[class][token]
-        local weaponReq = WEAPON_PROFICIENCY[class] and WEAPON_PROFICIENCY[class][token]
-        local req = armorReq or weaponReq
-
+        local req = self:GetProficiencyLevel(class, token, item.isHeirloom)
         if not req then
             -- Untertyp ist fuer diese Klasse nicht vorgesehen
             return false, L.R_CLASS
@@ -1780,9 +2197,6 @@ function EG:CanUseItem(itemOrLink)
             return false, sformat(L.R_LEVEL, req), true
         end
     end
-
-    -- Zweihandwaffen ohne Titanengriff sind fuer die Schildhand tabu -
-    -- das faengt bereits die Slot-Logik ab.
 
     -- Tooltip-Check: deckt Klassenbindung, Ruf, Rasse und Beruf ab.
     -- Ergebnis am Item merken - der Scan ist vergleichsweise teuer und das
@@ -1821,13 +2235,6 @@ function EG:IsHeirloomItem(item)
     return (item and item.quality == HEIRLOOM_QUALITY) and true or false
 end
 
--- Gilt die Erbstueckregel gerade? Ab Stufe 80 skalieren sie nicht mehr.
-function EG:HeirloomProtectionActive()
-    if not (self.db and self.db.protectHeirlooms) then return false end
-    if (UnitLevel("player") or 1) >= HEIRLOOM_MAX_LEVEL then return false end
-    return true
-end
-
 -- Alte API: Erbstueck UND Regel aktiv
 function EG:IsHeirloom(item)
     return self:IsHeirloomItem(item) and self:HeirloomProtectionActive()
@@ -1837,52 +2244,67 @@ end
 -- 11  Vergleichs-Engine
 ------------------------------------------------------------------------------
 
---[[ Zentrale Auswertung. Alle Anzeigen (Chat, GUI, Taschen, Quest) bauen
-     auf dieses Ergebnis auf.
+--[[ Zentrale Auswertung. Alle Anzeigen (Chat, GUI, Taschen, Quest, Haendler)
+     bauen auf dieses Ergebnis auf.
+
+     Verglichen wird je Ausruestungsslot: der Kandidat wird in jeden moeglichen
+     Slot "eingesetzt" und mit dem dort angelegten Item verglichen. Der Slot
+     mit dem groessten Zugewinn gewinnt. Dadurch stimmen alle Sonderfaelle
+     von selbst:
+
+       * Ringe, Schmuck        der schwaechere der beiden Plaetze
+       * Einhandwaffen         Waffenhand oder Schildhand - die Schildhand
+                               zaehlt Waffen-DPS nur zur Haelfte
+       * Zweihandwaffe         Waffenhand und Schildhand zusammen; mit
+                               Titanengriff stattdessen einer der beiden
+       * Schild bei Zweihaender  gegen Waffenhand + Schildhand zusammen
+       * einzigartige Items    ein zweites Exemplar ersetzt das erste
 
      result = {
-       item, score, breakdown,
+       item, score, breakdown (nur mit detail),
        slots, mode, slotName,
-       equipped   = { { item, link, slotID, score, breakdown }, ... },
-       target     = Eintrag aus equipped, gegen den verglichen wird (oder nil)
-       targetScore, delta, isUpgrade, protected,
+       equipped   = { { item, link, slotID, score, breakdown, empty }, ... },
+       target     = Eintrag aus equipped, gegen den verglichen wird
+       targetScore, delta, threshold, wouldUpgrade, isUpgrade, combined,
        usable, reason, levelTooLow, note
      }                                                                     ]]
-function EG:Compare(itemLink)
+function EG:Compare(itemLink, detail)
     local item = self:GetItemData(itemLink)
     if not item then return nil end
 
     local result = { item = item, equipped = {} }
-
-    result.breakdown, result.score = self:GetScoreBreakdown(item)
 
     local usable, reason, levelTooLow = self:CanUseItem(item)
     result.usable      = usable
     result.reason      = reason
     result.levelTooLow = levelTooLow and true or false
 
-    local slots, mode = self:GetEquipSlots(item)
+    local slots, mode, candSlot = self:GetEquipSlots(item)
     result.slots = slots
     result.mode  = mode
     result.slotName = slots and self:GetSlotName(slots) or (item.equipLoc or "?")
 
-    if not slots then
-        result.isUpgrade = false
+    if not slots or item.isTool or item.isCosmetic then
+        result.score = self:GetItemScore(item)
+        if detail then result.breakdown = (self:GetScoreBreakdown(item)) end
+        result.isUpgrade    = false
+        result.wouldUpgrade = false
+        result.noCompare    = true
         return result
     end
 
     -- Angelegte Gegenstuecke einsammeln
-    local anyHeirloom = false
     for _, slotID in ipairs(slots) do
-        local eq, link = self:GetEquippedData(slotID)
-        if eq then
-            local bd, sc = self:GetScoreBreakdown(eq)
+        local link = GetInventoryItemLink("player", slotID)
+        if link then
+            local eq = self:GetItemData(link)
+            if not eq then return nil end   -- noch nicht im Client-Cache
             local entry = {
                 item = eq, link = link, slotID = slotID,
-                score = sc, breakdown = bd,
-                isHeirloom = self:IsHeirloomItem(eq),
+                score = self:GetItemScore(eq, slotID),
+                isHeirloom = eq.isHeirloom,
             }
-            if entry.isHeirloom then anyHeirloom = true end
+            if detail then entry.breakdown = (self:GetScoreBreakdown(eq, slotID)) end
             result.equipped[#result.equipped + 1] = entry
         else
             result.equipped[#result.equipped + 1] = {
@@ -1892,106 +2314,46 @@ function EG:Compare(itemLink)
         end
     end
 
-    -- Hinweise zu Zweihand-/Schildhand-Situationen
-    if item.equipLoc == "INVTYPE_2HWEAPON" then
-        result.note = L.NOTE_2H
-    elseif OFFHAND_LOCS[item.equipLoc] and mode == "BOTH" then
-        result.note = L.NOTE_OFFHAND
-    elseif item.equipLoc == "INVTYPE_WEAPON" and self:HasTwoHandEquipped() then
-        result.note = L.NOTE_MH_2H
-    end
-    if item.estimated then
-        result.note = (result.note and (result.note .. " ") or "") .. L.NOTE_HEIRLOOM_EST
-    end
-
-    --[[--------------------------------------------------------------
-         Erbstuecke
-
-         Erbstuecke wachsen mit der Charakterstufe und geben Erfahrung
-         dazu; ein normales Item der Levelphase kann dagegen nicht
-         anhalten. Deshalb gelten drei Regeln:
-
-           normales Item  gegen Erbstueck  ->  verliert immer
-           Erbstueck      gegen normal     ->  gewinnt immer
-           Erbstueck      gegen Erbstueck  ->  ganz normal nach Punkten
-
-         Wichtig ist die Slot-Genauigkeit: liegt in Ring 1 ein Erbstueck
-         und in Ring 2 ein normaler Ring, wird ein besserer normaler Ring
-         weiterhin fuer Ring 2 empfohlen. Blockiert wird nur, wenn alle
-         infrage kommenden Plaetze von Erbstuecken belegt sind.
-
-         Ab Stufe 80 skalieren Erbstuecke nicht mehr, dort greift die
-         Regel nicht (und laesst sich mit /eg heirloom ganz abschalten).
-    ----------------------------------------------------------------]]
-    local candidateHL = self:IsHeirloomItem(item)
-    local protect     = self:HeirloomProtectionActive()
-    local forced      = false
-
-    local function SetProtected()
-        result.protected   = true
-        result.targetScore = mhuge
-        result.delta       = -mhuge
-        result.isUpgrade   = false
-        result.reason      = result.reason or sformat(L.R_HEIRLOOM, HEIRLOOM_MAX_LEVEL)
-        for _, e in ipairs(result.equipped) do
-            if e.isHeirloom then result.target = e break end
-        end
-    end
-
-    -- Plaetze ohne Erbstueck
-    local function FreeSlots()
-        local free = {}
-        for _, e in ipairs(result.equipped) do
-            if not e.isHeirloom then free[#free + 1] = e end
-        end
-        return free
-    end
-
+    -- Den Slot mit dem groessten Zugewinn bestimmen
+    local best
     if mode == "BOTH" then
-        -- Zweihandwaffe: beide Haende zusammen
-        if protect and not candidateHL and anyHeirloom then
-            SetProtected()
-            return result
-        end
-
+        -- beide Haende zusammen
         local sum = 0
         for _, e in ipairs(result.equipped) do sum = sum + (e.score or 0) end
-        result.targetScore = sum
-        result.target      = result.equipped[1]
-        result.combined    = true
-
-        if protect and candidateHL and not anyHeirloom then forced = true end
+        local target = result.equipped[1]
+        for _, e in ipairs(result.equipped) do
+            if e.item and e.item.equipLoc == "INVTYPE_2HWEAPON" then target = e break end
+        end
+        best = { entry = target, cs = self:GetItemScore(item, candSlot), es = sum, slot = candSlot }
+        result.combined = true
     else
         local pool = result.equipped
 
-        if protect and not candidateHL then
-            pool = FreeSlots()
-            if #pool == 0 then
-                SetProtected()
-                return result
+        -- Einzigartige Items: ein zweites Exemplar darf nicht daneben, es
+        -- ersetzt das angelegte.
+        if item.unique and #pool > 1 then
+            for _, e in ipairs(pool) do
+                if e.item and e.item.id == item.id then pool = { e } break end
             end
-        elseif protect and candidateHL then
-            local free = FreeSlots()
-            if #free > 0 then
-                -- Ein Erbstueck ersetzt zuerst das normale Item
-                pool   = free
-                forced = true
-            end
-            -- sonst: Erbstueck gegen Erbstueck, normal weiterrechnen
         end
 
-        local worst, worstScore = nil, mhuge
         for _, e in ipairs(pool) do
-            local sc = e.empty and 0 or (e.score or 0)
-            if sc < worstScore then worstScore, worst = sc, e end
+            local cs = self:GetItemScore(item, e.slotID)
+            local es = e.score or 0
+            local d  = cs - es
+            if not best or d > best.d + 1e-9 or (d > best.d - 1e-9 and es < best.es) then
+                best = { entry = e, cs = cs, es = es, d = d, slot = e.slotID }
+            end
         end
-        result.target      = worst
-        result.targetScore = (worstScore == mhuge) and 0 or worstScore
     end
 
-    result.forced = forced
+    result.target      = best.entry
+    result.targetScore = best.es
+    result.score       = best.cs
+    result.candSlot    = best.slot
+    result.delta       = best.cs - best.es
 
-    result.delta = result.score - result.targetScore
+    if detail then result.breakdown = (self:GetScoreBreakdown(item, best.slot)) end
 
     --[[ Schwelle fuer "Verbesserung".
          Absolut UND relativ: bei kleinen Wertungen (niedrige Stufen) ist
@@ -2002,290 +2364,162 @@ function EG:Compare(itemLink)
     local threshold = mmax(minDelta, relative)
     result.threshold = threshold
 
-    result.isUpgrade = (usable == true)
-        and (forced or (result.delta > 0 and result.delta >= threshold))
+    result.wouldUpgrade = (result.delta > 0 and result.delta >= threshold)
+    result.isUpgrade    = (usable == true) and result.wouldUpgrade
 
-    if not result.reason then
+    result.percent = (result.targetScore > 0) and (result.delta / result.targetScore * 100) or nil
+
+    -- Wer wird ersetzt? (Items und Slots, fuer die Attribut-Differenzen)
+    local replaced = {}
+    if result.combined then
+        for _, e in ipairs(result.equipped) do
+            if e.item then replaced[#replaced + 1] = { item = e.item, slotID = e.slotID } end
+        end
+    elseif best.entry.item then
+        replaced[1] = { item = best.entry.item, slotID = best.entry.slotID }
+    end
+    result.replaced = replaced
+
+    -- Erbstuecke
+    local factor     = self:GetHeirloomFactor()
+    local candHL     = item.isHeirloom and true or false
+    local targetHL   = false
+    for _, r in ipairs(replaced) do if r.item.isHeirloom then targetHL = true end end
+    result.heirloomActive = (factor > 1) and (candHL or targetHL)
+
+    -- Begruendung
+    if result.reason == nil then
         if usable ~= true then
             -- reason wurde bereits von CanUseItem gesetzt
-        elseif forced then
-            result.reason = L.R_HEIRLOOM_WINS
-        elseif candidateHL and protect then
-            result.reason = L.R_HEIRLOOM_VS
-        elseif result.target and result.target.empty then
-            result.reason = L.R_EMPTY
-        elseif result.delta > 0 and result.delta < threshold then
-            result.reason = sformat(L.R_MINDELTA, FmtScore(threshold))
-        elseif result.delta == 0 then
-            result.reason = L.R_EQUAL
-        elseif result.delta < 0 then
-            result.reason = L.R_LOWER
+        elseif result.wouldUpgrade then
+            if best.entry.empty then
+                result.reason = L.R_EMPTY
+            elseif candHL and not targetHL and factor > 1 then
+                result.reason = L.R_HEIRLOOM_WINS
+            end
+        else
+            if result.delta > 0 then
+                result.reason = sformat(L.R_MINDELTA, FmtScore(threshold))
+            elseif targetHL and not candHL and factor > 1 then
+                result.reason = L.R_HEIRLOOM_KEEP
+            elseif result.delta == 0 then
+                result.reason = L.R_EQUAL
+            else
+                result.reason = L.R_LOWER
+            end
         end
     end
+
+    -- Hinweise
+    local notes = {}
+    if item.equipLoc == "INVTYPE_2HWEAPON" then
+        notes[#notes + 1] = (mode == "EITHER") and L.NOTE_2H_TG or L.NOTE_2H
+    elseif OFFHAND_LOCS[item.equipLoc] and mode == "BOTH" then
+        notes[#notes + 1] = L.NOTE_OFFHAND
+    elseif item.equipLoc == "INVTYPE_WEAPON" and self:HasTwoHandEquipped() and not self:HasTitansGrip() then
+        notes[#notes + 1] = L.NOTE_MH_2H
+    end
+    if item.unique and best.entry.item and best.entry.item.id == item.id and mode == "EITHER" then
+        notes[#notes + 1] = L.NOTE_UNIQUE
+    end
+    if result.heirloomActive then
+        notes[#notes + 1] = sformat(L.NOTE_HEIRLOOM_PREF, FmtWeight(factor))
+    end
+    if candHL and item.estimated then
+        notes[#notes + 1] = L.NOTE_HEIRLOOM_EST
+    end
+    if not result.wouldUpgrade then
+        local extra = 0
+        for _, r in ipairs(replaced) do extra = extra + self:GetExtraPoints(r.item) end
+        if extra > 0 then
+            notes[#notes + 1] = sformat(L.NOTE_EXTRAS, FmtScore(extra))
+        end
+    end
+    result.notes = notes
+    result.note  = (#notes > 0) and tconcat(notes, " ") or nil
 
     return result
 end
 
--- Schlanke Variante fuer Taschen-Icons: nur ja/nein, mit Score-Cache
+-- Schlanke Variante: nur ja/nein
 function EG:IsUpgrade(itemLink)
     local r = self:Compare(itemLink)
     if not r then return false, 0, 0, nil end
     return (r.isUpgrade == true), r.score or 0, r.targetScore or 0, r.slots
 end
 
-------------------------------------------------------------------------------
--- 12  Taschen-Indikatoren
-------------------------------------------------------------------------------
+--[[ Zustand fuer die Markierungen an Taschen, Haendlern, Beute usw.:
+       "UPGRADE"  echte Verbesserung
+       "LEVEL"    waere eine, aber die Charakterstufe reicht noch nicht
+       nil        keine Markierung
+     Zweiter Rueckgabewert: true, wenn die Itemdaten noch nicht im Client
+     liegen und es sich lohnt, gleich noch einmal zu fragen.               ]]
+function EG:GetUpgradeState(link)
+    if not link then return nil end
 
-EG.hooks = { default = false, elvui = false, bagnon = false, quest = false,
-             bank = false, tooltip = false, immersion = false }
-
-function EG:CreateUpgradeIcon(button)
-    if button.EGIcon then return button.EGIcon end
-    local icon = button:CreateTexture(nil, "OVERLAY")
-    icon:SetTexture(TEX_UPGRADE)
-    icon:SetPoint("TOPRIGHT", button, "TOPRIGHT", -2, -2)
-    local size = tonumber(self.db and self.db.iconSize) or DEFAULTS.iconSize
-    icon:SetWidth(size)
-    icon:SetHeight(size)
-    icon:Hide()
-    button.EGIcon = icon
-    return icon
-end
-
---[[ Aktualisiert das Icon eines Taschen-Buttons.
-     state:  "UPGRADE"  gruen  - echtes Upgrade
-             "LEVEL"    gelb   - Upgrade, aber Charakterstufe zu niedrig
-             nil               - kein Icon                                 ]]
-function EG:UpdateBagButton(button, bagID, slotID)
-    if not button then return end
-    if not (self.db and self.db.showBagIcons) then
-        if button.EGIcon then button.EGIcon:Hide() end
-        return
-    end
-
-    bagID  = tonumber(bagID)
-    slotID = tonumber(slotID)
-    if not bagID or not slotID then return end
-
-    local link = GetContainerItemLink(bagID, slotID)
-    local sig  = (self.profileCache and self.profileCache.sig or "") .. "#" .. (self.epoch or 0)
-
-    -- Nur neu rechnen, wenn sich Inhalt, Profil oder Einstellungen geaendert haben
-    if button.EGLink == link and button.EGSig == sig then
-        return
-    end
-    button.EGLink = link
-    button.EGSig  = sig
-
-    local icon = self:CreateUpgradeIcon(button)
-
-    if not link then
-        icon:Hide()
-        return
-    end
+    local hit = self.stateCache[link]
+    if hit ~= nil then return hit or nil end
 
     local item = self:GetItemData(link)
-    if not item then
-        -- Item noch nicht im Client-Cache: Markierung loeschen und
-        -- gleich noch einmal versuchen
-        button.EGLink = nil
-        icon:Hide()
-        self:Debounce("bagretry", 0.5, function() self:RefreshAllBags() end)
-        return
-    end
-    if not item.equipLoc or item.equipLoc == "" then
-        icon:Hide()
-        return
-    end
+    if not item then return nil, true end
 
-    local result = self:Compare(link)
-    if not result or not result.slots then
-        icon:Hide()
-        return
-    end
-
-    if result.isUpgrade then
-        icon:SetTexture(TEX_UPGRADE)
-        icon:SetVertexColor(0, 1, 0)
-        icon:Show()
-        return
-    end
-
-    -- Nur wegen der Charakterstufe (noch) nicht anlegbar, waere aber besser
-    if result.levelTooLow and (result.delta or 0) > 0 then
-        icon:SetTexture(TEX_UPGRADE)
-        icon:SetVertexColor(1, 0.85, 0)
-        icon:Show()
-        return
-    end
-
-    icon:Hide()
-end
-
-function EG:RefreshAllBags()
-    if ContainerFrame_Update then
-        for i = 1, NUM_CONTAINER_FRAMES or 13 do
-            local frame = _G["ContainerFrame" .. i]
-            if frame and frame:IsShown() then
-                -- Cache invalidieren, damit neu gerechnet wird
-                local name = frame:GetName()
-                for j = 1, (frame.size or MAX_CONTAINER_ITEMS or 36) do
-                    local b = _G[name .. "Item" .. j]
-                    if b then b.EGLink = nil end
-                end
-                ContainerFrame_Update(frame)
-            end
+    local state = false
+    if item.equipLoc and item.equipLoc ~= "" then
+        local r = self:Compare(link)
+        if not r then return nil, true end
+        if r.isUpgrade then
+            state = "UPGRADE"
+        elseif r.levelTooLow and r.wouldUpgrade then
+            state = "LEVEL"
         end
     end
-    if self.RefreshElvUI then self:RefreshElvUI() end
-end
-
-------------------------------------------------------------------------------
--- 12a  Blizzard-Taschen
-------------------------------------------------------------------------------
-
-function EG:HookDefaultBags()
-    if self.hooks.default or not ContainerFrame_Update then return end
-
-    hooksecurefunc("ContainerFrame_Update", function(frame)
-        if not frame then return end
-        local bagID = frame:GetID()
-        local name  = frame:GetName()
-        if not name then return end
-        local size  = frame.size or MAX_CONTAINER_ITEMS or 36
-        for i = 1, size do
-            local button = _G[name .. "Item" .. i]
-            if button then
-                -- WICHTIG: Der Button-Index entspricht NICHT dem Taschenplatz.
-                -- Die Blizzard-Taschen vergeben die IDs rueckwaerts, deshalb
-                -- immer button:GetID() verwenden.
-                EG:UpdateBagButton(button, bagID, button:GetID())
-            end
-        end
-    end)
-
-    self.hooks.default = true
-end
-
-function EG:HookBank()
-    if self.hooks.bank or not BankFrameItemButton_Update then return end
-
-    hooksecurefunc("BankFrameItemButton_Update", function(button)
-        if not button or button.isBag then return end
-        EG:UpdateBagButton(button, BANK_CONTAINER or -1, button:GetID())
-    end)
-
-    self.hooks.bank = true
-end
-
-------------------------------------------------------------------------------
--- 12b  ElvUI
-------------------------------------------------------------------------------
-
-function EG:HookElvUI()
-    if self.hooks.elvui or not ElvUI then return end
-
-    local ok, E = pcall(unpack, ElvUI)
-    if not ok or not E then return end
-
-    local B = E.GetModule and E:GetModule("Bags", true)
-    if not B or not B.UpdateSlot then return end
-
-    self.elvBags = B
-
-    --[[ Die ElvUI-Signaturen unterscheiden sich zwischen den 3.3.5a-Forks:
-           B:UpdateSlot(bagID, slotID)
-           B:UpdateSlot(frame, bagID, slotID)
-         Deshalb werden die Argumente zur Laufzeit ausgewertet.            ]]
-    hooksecurefunc(B, "UpdateSlot", function(self_, a, b, c)
-        local frame, bagID, slotID
-        if type(a) == "table" then
-            frame, bagID, slotID = a, b, c
-        else
-            bagID, slotID = a, b
-            frame = self_ and (self_.BagFrame or self_.BankFrame)
-        end
-
-        bagID, slotID = tonumber(bagID), tonumber(slotID)
-        if not bagID or not slotID then return end
-
-        local button
-        if frame and frame.Bags and frame.Bags[bagID] then
-            button = frame.Bags[bagID][slotID]
-        end
-        if not button and self_ and self_.BagFrame and self_.BagFrame.Bags
-            and self_.BagFrame.Bags[bagID] then
-            button = self_.BagFrame.Bags[bagID][slotID]
-        end
-        if not button and self_ and self_.BankFrame and self_.BankFrame.Bags
-            and self_.BankFrame.Bags[bagID] then
-            button = self_.BankFrame.Bags[bagID][slotID]
-        end
-
-        if button then
-            EG:UpdateBagButton(button, bagID, slotID)
-        end
-    end)
-
-    function EG:RefreshElvUI()
-        local Bmod = self.elvBags
-        if not Bmod then return end
-        for bagID = 0, NUM_BAG_SLOTS or 4 do
-            local numSlots = GetContainerNumSlots(bagID) or 0
-            for slotID = 1, numSlots do
-                local frame = Bmod.BagFrame
-                if frame and frame.Bags and frame.Bags[bagID] then
-                    local button = frame.Bags[bagID][slotID]
-                    if button then
-                        button.EGLink = nil
-                        self:UpdateBagButton(button, bagID, slotID)
-                    end
-                end
-            end
-        end
-    end
-
-    self.hooks.elvui = true
-    self:Print(L.HOOK_ELVUI)
-end
-
-------------------------------------------------------------------------------
--- 12c  Bagnon
-------------------------------------------------------------------------------
-
-function EG:HookBagnon()
-    if self.hooks.bagnon or not Bagnon then return end
-    if not Bagnon.ItemSlot or not Bagnon.ItemSlot.Update then return end
-
-    hooksecurefunc(Bagnon.ItemSlot, "Update", function(button)
-        if not button then return end
-        local bag = button.GetBag and button:GetBag() or button.bag
-        local slot = button.GetID and button:GetID() or button.slot
-        if bag and slot then
-            EG:UpdateBagButton(button, bag, slot)
-        end
-    end)
-
-    self.hooks.bagnon = true
-    self:Print(L.HOOK_BAGNON)
+    self.stateCache[link] = state
+    return state or nil
 end
 
 ------------------------------------------------------------------------------
 -- 13  Questbelohnungen
 ------------------------------------------------------------------------------
 
+EG.hooks = { default = false, elvui = false, bagnon = false, quest = false,
+             bank = false, tooltip = false, immersion = false, overlays = false }
+
+-- Stand-in, bis EasyGearOverlays.lua die echte Fassung liefert
+function EG:RefreshAllBags() end
+
+--[[ Aufgenommene Quests (Questlog) und das NPC-Fenster benutzen verschiedene
+     API-Funktionen. Das Flag QuestInfoFrame.questLog allein genuegt nicht: es
+     bleibt gesetzt, wenn man das Log schliesst und danach mit einem NPC
+     spricht - vor allem unter Immersion, das dieses Flag nie zuruecksetzt.   ]]
+local function InQuestLog()
+    return (QuestInfoFrame and QuestInfoFrame.questLog and GetQuestLogItemLink
+        and QuestLogFrame and QuestLogFrame:IsShown()) and true or false
+end
+
+function EG:GetQuestChoiceCount()
+    if InQuestLog() then return (GetNumQuestLogChoices and GetNumQuestLogChoices()) or 0 end
+    return (GetNumQuestChoices and GetNumQuestChoices()) or 0
+end
+
 function EG:GetQuestRewardLink(index)
-    if not index or not GetQuestItemLink then return nil end
+    if not index then return nil end
+    if InQuestLog() then return GetQuestLogItemLink("choice", index) end
+    if not GetQuestItemLink then return nil end
     return GetQuestItemLink("choice", index)
 end
 
 --[[ Anzahl und Verwendbarkeit kommen direkt aus der Blizzard-API.
      Das Original las button.count aus dem Frame - dieses Feld existiert
-     in 3.3.5a nicht und lieferte deshalb immer 1.                         ]]
+     in 3.3.5 nicht und lieferte deshalb immer 1.                         ]]
 function EG:GetQuestRewardInfo(index)
-    if not GetQuestItemInfo then return nil end
-    local name, texture, numItems, quality, isUsable = GetQuestItemInfo("choice", index)
+    local name, texture, numItems, quality, isUsable
+    if InQuestLog() and GetQuestLogChoiceInfo then
+        name, texture, numItems, quality, isUsable = GetQuestLogChoiceInfo(index)
+    elseif GetQuestItemInfo then
+        name, texture, numItems, quality, isUsable = GetQuestItemInfo("choice", index)
+    else
+        return nil
+    end
     return name, texture, tonumber(numItems) or 1, quality, isUsable
 end
 
@@ -2302,11 +2536,11 @@ function EG:IsQuestRewardUsable(index)
 end
 
 --[[ Auswahl-Logik:
-       1. Existiert mindestens ein echtes Upgrade -> hoechste Wertung.
+       1. Existiert mindestens ein echtes Upgrade -> hoechster Zugewinn.
        2. Sonst -> hoechster Gesamtverkaufswert (Stueckpreis * Anzahl).
      Gleichstand wird ueber den Verkaufswert aufgeloest.                   ]]
 function EG:GetBestQuestReward()
-    local numChoices = GetNumQuestChoices and GetNumQuestChoices() or 0
+    local numChoices = self:GetQuestChoiceCount()
     if not numChoices or numChoices <= 0 then return nil end
 
     --[[ Entscheidend ist der Zugewinn, nicht die absolute Wertung.
@@ -2434,7 +2668,7 @@ function EG:UpdateQuestRewards()
     self.selectedQuestReward = nil
     self:ClearQuestIcons()
 
-    local numChoices = GetNumQuestChoices and GetNumQuestChoices() or 0
+    local numChoices = self:GetQuestChoiceCount()
     if not numChoices or numChoices <= 0 then return end
 
     local best, score, isUpgrade, value, mode, delta = self:GetBestQuestReward()
@@ -2514,6 +2748,31 @@ end
 -- 14  Tooltip-Integration
 ------------------------------------------------------------------------------
 
+--[[ Auf angelegten Items (Charakterfenster, Inspektion, Vergleichstooltips)
+     ergibt "Verbesserung gegenueber sich selbst" keinen Sinn - dort erscheint
+     nur die Wertung.                                                      ]]
+local function IsEquippedContext(tooltip)
+    if tooltip == ShoppingTooltip1 or tooltip == ShoppingTooltip2 then return true end
+    local owner = tooltip.GetOwner and tooltip:GetOwner()
+    local name  = owner and owner.GetName and owner:GetName()
+    if name and (sfind(name, "^Character") or sfind(name, "^Inspect")) then return true end
+    return false
+end
+
+-- "+23" / "-5" / "+4.2"
+local function FmtDelta(v, decimals)
+    local s
+    if decimals and decimals > 0 then
+        s = sformat("%." .. decimals .. "f", v)
+    else
+        s = sformat("%d", v + ((v >= 0) and 0.5 or -0.5))
+    end
+    if v > 0 then s = "+" .. s end
+    return s
+end
+
+local MAX_DIFF_LINES = 6
+
 local function AddTooltipInfo(tooltip, forcedLink)
     if not (EG.db and EG.db.showTooltip) then return end
     if tooltip.EGDone then return end
@@ -2529,7 +2788,7 @@ local function AddTooltipInfo(tooltip, forcedLink)
     if not item or not item.equipLoc or item.equipLoc == "" then return end
 
     local result = EG:Compare(link)
-    if not result or not result.slots then return end
+    if not result then return end
 
     tooltip.EGDone = true
 
@@ -2538,14 +2797,13 @@ local function AddTooltipInfo(tooltip, forcedLink)
         COLOR.title .. "EasyGear" .. COLOR.reset,
         COLOR.value .. L.SCORE .. ": " .. FmtScore(result.score) .. COLOR.reset)
 
-    if result.usable ~= true then
-        tooltip:AddLine(COLOR.bad .. (result.reason or L.NOT_USABLE) .. COLOR.reset, nil, nil, nil, true)
+    if result.noCompare or IsEquippedContext(tooltip) then
         tooltip:Show()
         return
     end
 
-    if result.protected then
-        tooltip:AddLine(COLOR.warn .. L.HEIRLOOM .. " " .. L.PROTECTED .. COLOR.reset)
+    if result.usable ~= true then
+        tooltip:AddLine(COLOR.bad .. (result.reason or L.NOT_USABLE) .. COLOR.reset, nil, nil, nil, true)
         tooltip:Show()
         return
     end
@@ -2557,28 +2815,40 @@ local function AddTooltipInfo(tooltip, forcedLink)
         else
             targetText = FmtScore(result.targetScore)
         end
+        local slotText = result.combined and EG:GetSlotName(result.slots)
+                         or EG:GetSlotName(result.target.slotID)
         tooltip:AddDoubleLine(
-            COLOR.grey .. EG:GetSlotName(result.target.slotID) .. COLOR.reset,
+            COLOR.grey .. slotText .. COLOR.reset,
             COLOR.grey .. targetText .. COLOR.reset)
     end
 
     local delta = result.delta or 0
+    local pct   = result.percent and ("  (" .. FmtPct(result.percent) .. ")") or ""
     if result.isUpgrade then
-        -- Bei einem Erbstueck gegen ein normales Item kann die Differenz
-        -- negativ sein und es trotzdem die Empfehlung sein.
         local sign = (delta > 0) and "+" or ""
-        tooltip:AddLine(COLOR.good .. L.UPGRADE .. "  " .. sign .. FmtScore(delta) .. COLOR.reset)
-        if result.forced and result.reason then
-            tooltip:AddLine(COLOR.grey .. result.reason .. COLOR.reset, nil, nil, nil, true)
-        end
+        tooltip:AddLine(COLOR.good .. L.UPGRADE .. "  " .. sign .. FmtScore(delta) .. pct .. COLOR.reset)
     elseif delta > 0 then
-        tooltip:AddLine(COLOR.warn .. L.NO_UPGRADE .. "  +" .. FmtScore(delta) .. COLOR.reset)
+        tooltip:AddLine(COLOR.warn .. L.NO_UPGRADE .. "  +" .. FmtScore(delta) .. pct .. COLOR.reset)
     else
-        tooltip:AddLine(COLOR.bad .. L.NO_UPGRADE .. "  " .. FmtScore(delta) .. COLOR.reset)
+        tooltip:AddLine(COLOR.bad .. L.NO_UPGRADE .. "  " .. FmtScore(delta) .. pct .. COLOR.reset)
+    end
+    if result.reason then
+        tooltip:AddLine(COLOR.grey .. result.reason .. COLOR.reset, nil, nil, nil, true)
+    end
+
+    -- Attribut-Unterschiede zum ersetzten Item, wie bei RatingBuster
+    if EG.db.tooltipDiff then
+        local diffs = EG:GetStatDiff(item, result.replaced)
+        for i = 1, mmin(#diffs, MAX_DIFF_LINES) do
+            local d = diffs[i]
+            local col = (d.delta > 0) and COLOR.good or COLOR.bad
+            tooltip:AddLine(col .. FmtDelta(d.delta, d.decimals) .. COLOR.reset .. " " .. d.label)
+        end
     end
 
     tooltip:Show()
 end
+EG.AddTooltipInfo = AddTooltipInfo
 
 --[[--------------------------------------------------------------------
      Immersion: Grossansicht (Shift)
@@ -2663,11 +2933,12 @@ function EG:HookTooltips()
         end
     end
 
-    --[[ Questbelohnungen werden ueber SetQuestItem angezeigt, nicht ueber
-         SetHyperlink - GetItem() liefert dabei nicht zuverlaessig einen
-         Link. Deshalb wird der Link hier direkt uebergeben. Das gilt fuer
-         das Blizzard-Questfenster ebenso wie fuer Immersion, das denselben
-         GameTooltip benutzt.                                             ]]
+    --[[ Questbelohnungen werden ueber SetQuestItem (NPC-Fenster) bzw.
+         SetQuestLogItem (Questlog) angezeigt, nicht ueber SetHyperlink -
+         GetItem() liefert dabei nicht zuverlaessig einen Link. Deshalb wird
+         der Link hier direkt uebergeben. Das gilt fuer das Blizzard-
+         Questfenster ebenso wie fuer Immersion, das denselben GameTooltip
+         benutzt.                                                          ]]
     if GameTooltip.SetQuestItem then
         hooksecurefunc(GameTooltip, "SetQuestItem", function(tip, itemType, index)
             if not GetQuestItemLink then return end
@@ -2675,417 +2946,16 @@ function EG:HookTooltips()
             if link then AddTooltipInfo(tip, link) end
         end)
     end
+    if GameTooltip.SetQuestLogItem and GetQuestLogItemLink then
+        hooksecurefunc(GameTooltip, "SetQuestLogItem", function(tip, itemType, index)
+            local link = GetQuestLogItemLink(itemType, index)
+            if link then AddTooltipInfo(tip, link) end
+        end)
+    end
 
     self.hooks.tooltip = true
 end
 
-------------------------------------------------------------------------------
--- 15  EGUP - Klassenpaket (GM) und Aufraeumen
-------------------------------------------------------------------------------
-
---[[ Die Erbstueckdaten stehen in EasyGearHeirlooms.lua:
-       EG.HEIRLOOMS           Stammdaten je Item-ID
-       EG.HEIRLOOM_UNIVERSAL  Ring und Taschen fuer jede Klasse
-       EG.HEIRLOOM_PACKAGES   Zuordnung je Klasse                          ]]
-
-function EG:GetHeirloomInfo(id)
-    return self.HEIRLOOMS and self.HEIRLOOMS[id] or nil
-end
-
--- Angezeigter Name: bevorzugt der lokalisierte aus dem Client
-function EG:GetHeirloomName(id)
-    local name = GetItemInfo(id)
-    if name then return name end
-    local info = self:GetHeirloomInfo(id)
-    return (info and info.en) or ("Item " .. tostring(id))
-end
-
---[[ Baut das Paket fuer eine Klasse.
-     Rueckgabe: Liste aus { id, count, name }                              ]]
---[[ faction: "Alliance" oder "Horde". Die beiden PvP-Insignien sind
-     fraktionsgebunden; ohne Angabe werden beide mitgegeben.              ]]
-function EG:GetEGUPPackage(class, faction)
-    local package, seen = {}, {}
-
-    local function Add(entry)
-        if not entry or not entry.id then return end
-        local id = entry.id
-
-        local info = self:GetHeirloomInfo(id)
-        if info and info.faction and faction and info.faction ~= faction then
-            return   -- gehoert der anderen Fraktion
-        end
-        if seen[id] then
-            -- gleiche ID zweimal gelistet: hoechste Menge gewinnt
-            local rec = package[seen[id]]
-            rec.count = mmax(rec.count, entry.count or 1)
-            return
-        end
-        package[#package + 1] = {
-            id = id, count = entry.count or 1, name = self:GetHeirloomName(id),
-        }
-        seen[id] = #package
-    end
-
-    for _, entry in ipairs(self.HEIRLOOM_UNIVERSAL or {}) do Add(entry) end
-
-    local list = self.HEIRLOOM_PACKAGES and self.HEIRLOOM_PACKAGES[class or ""]
-    if list then
-        for _, entry in ipairs(list) do Add(entry) end
-    end
-
-    return package
-end
-
---[[ Prueft alle hinterlegten IDs gegen den Client-Cache.
-
-     Eine falsche ID faellt bei ".additem" sonst nicht auf: der Server
-     meldet den Fehler, der Spieler bekommt nichts, und im Paket sieht
-     alles richtig aus. Geprueft wird deshalb, ob das Item existiert, ob
-     es Erbstueckqualitaet hat und welchen Slot es tatsaechlich belegt.  ]]
-function EG:VerifyHeirlooms(classFilter)
-    if not self.HEIRLOOMS then
-        self:Print(COLOR.bad .. "EasyGearHeirlooms.lua nicht geladen." .. COLOR.reset)
-        return
-    end
-
-    local ids = {}
-    if classFilter then
-        for _, e in ipairs(self:GetEGUPPackage(classFilter)) do ids[#ids + 1] = e.id end
-    else
-        for id in pairs(self.HEIRLOOMS) do ids[#ids + 1] = id end
-        tsort(ids)
-    end
-
-    self:Raw(COLOR.title .. "===== " .. L.EGUP_VERIFY_HEAD .. " =====" .. COLOR.reset)
-
-    local ok, missing, wrong = 0, 0, 0
-
-    for _, id in ipairs(ids) do
-        local info = self:GetHeirloomInfo(id)
-        local name, link, quality, _, _, _, subType, _, equipLoc = GetItemInfo(id)
-
-        if not name then
-            missing = missing + 1
-            self:Raw(sformat("  %s%-6d%s %s%s%s  %s", COLOR.value, id, COLOR.reset,
-                COLOR.bad, L.EGUP_VERIFY_MISSING, COLOR.reset,
-                COLOR.grey .. (info and info.en or "?") .. COLOR.reset))
-        else
-            local problems = {}
-
-            if not (info and info.bag) and quality ~= HEIRLOOM_QUALITY then
-                problems[#problems + 1] = sformat(L.EGUP_VERIFY_QUALITY, tostring(quality))
-            end
-            if info and info.loc and info.loc ~= "" and equipLoc ~= info.loc then
-                -- Bogen kann je nach Client RANGED oder RANGEDRIGHT sein
-                local rangedOK = (info.loc == "INVTYPE_RANGED"
-                    and equipLoc == "INVTYPE_RANGEDRIGHT")
-                if not rangedOK then
-                    problems[#problems + 1] = sformat(L.EGUP_VERIFY_SLOT,
-                        tostring(equipLoc), tostring(info.loc))
-                end
-            end
-
-            if #problems > 0 then
-                wrong = wrong + 1
-                self:Raw(sformat("  %s%-6d%s %s  %s%s%s", COLOR.value, id, COLOR.reset,
-                    link or name, COLOR.warn, tconcat(problems, ", "), COLOR.reset))
-            else
-                ok = ok + 1
-                self:Raw(sformat("  %s%-6d%s %s  %s%s%s", COLOR.value, id, COLOR.reset,
-                    link or name, COLOR.grey, tostring(subType or ""), COLOR.reset))
-            end
-        end
-    end
-
-    self:Raw(sformat("%s%s%s  %s%d%s  |  %s%d%s  |  %s%d%s",
-        COLOR.title, L.EGUP_VERIFY_SUM, COLOR.reset,
-        COLOR.good, ok, COLOR.reset,
-        COLOR.warn, wrong, COLOR.reset,
-        COLOR.bad, missing, COLOR.reset))
-
-    if missing > 0 then
-        self:Raw(COLOR.grey .. L.EGUP_VERIFY_HINT .. COLOR.reset)
-    end
-end
-
--- Paketvorschau ohne etwas zu senden
-function EG:PrintEGUPPackage(class, faction)
-    local package = self:GetEGUPPackage(class, faction)
-    if #package == 0 then
-        self:Print(COLOR.bad .. sformat(L.EGUP_NO_PACKAGE, tostring(class)) .. COLOR.reset)
-        return
-    end
-    self:Raw(COLOR.title .. sformat("%s: %s (%d)", L.EGUP_PACKAGE_HEAD,
-        tostring(class), #package) .. COLOR.reset)
-    for _, e in ipairs(package) do
-        local link = select(2, GetItemInfo(e.id))
-        self:Raw(sformat("  %s%-6d%s x%d  %s", COLOR.value, e.id, COLOR.reset,
-            e.count, link or e.name))
-    end
-end
-
-function EG:SendEGUPCommand(command)
-    SendChatMessage(command, "SAY")
-end
-
-function EG:BuildEGUPCommand(targetName, id, count)
-    local template = (self.db and self.db.egupCommand) or DEFAULTS.egupCommand
-    local cmd = sgsub(template, "{name}",  tostring(targetName))
-    cmd = sgsub(cmd, "{id}",    tostring(id))
-    cmd = sgsub(cmd, "{count}", tostring(count))
-    return cmd
-end
-
-EG.EGUPQueue   = {}
-EG.EGUPRunning = false
-
-function EG:ProcessEGUPQueue()
-    if self.EGUPRunning then return end
-    if #self.EGUPQueue == 0 then return end
-
-    self.EGUPRunning = true
-    local index = 1
-    local delay = tonumber(self.db and self.db.egupDelay) or DEFAULTS.egupDelay
-
-    local function SendNext()
-        if index > #self.EGUPQueue then
-            self.EGUPQueue   = {}
-            self.EGUPRunning = false
-            self:Print(COLOR.good .. L.EGUP_DONE .. COLOR.reset)
-            self:Print(L.EGUP_HINT)
-            return
-        end
-        local command = self.EGUPQueue[index]
-        index = index + 1
-        self:SendEGUPCommand(command)
-        self:After(delay, SendNext)
-    end
-
-    SendNext()
-end
-
-function EG:StartEGUP(targetName, class, faction)
-    local package = self:GetEGUPPackage(class, faction)
-    if not package or #package == 0 then
-        self:Print(COLOR.bad .. sformat(L.EGUP_NO_PACKAGE, tostring(class)) .. COLOR.reset)
-        return
-    end
-
-    local session = {
-        targetName = targetName,
-        targetGUID = UnitGUID("target"),
-        class      = class,
-        faction    = faction,
-        items      = {},
-        active     = true,
-        time       = time and time() or 0,
-    }
-
-    self.EGUPQueue = {}
-    for _, item in ipairs(package) do
-        local rec = session.items[item.id]
-        if not rec then
-            rec = { id = item.id, name = item.name, count = 0 }
-            session.items[item.id] = rec
-        end
-        rec.count = rec.count + (item.count or 1)
-        self.EGUPQueue[#self.EGUPQueue + 1] =
-            self:BuildEGUPCommand(targetName, item.id, item.count or 1)
-    end
-
-    self.charDB.egup = session
-    self.EGUPSession = session
-
-    self:Print(sformat(L.EGUP_RUNNING, COLOR.value .. targetName .. COLOR.reset))
-    self:Print("Klasse/Class:", COLOR.value .. tostring(class) .. COLOR.reset,
-               "- Eintraege/Entries:", COLOR.value .. #package .. COLOR.reset)
-
-    self:ProcessEGUPQueue()
-end
-
-StaticPopupDialogs["EASYGEAR_EGUP_CONFIRM"] = {
-    text = "%s",
-    button1 = YES or "Ja",
-    button2 = NO or "Nein",
-    OnAccept = function(self)
-        local d = self.data or EasyGear.pendingEGUP
-        if d then EasyGear:StartEGUP(d.name, d.class, d.faction) end
-        EasyGear.pendingEGUP = nil
-    end,
-    OnCancel = function() EasyGear.pendingEGUP = nil end,
-    timeout = 30, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-}
-
-function EG:RunEGUP()
-    if not UnitExists("target") then
-        self:Print(COLOR.bad .. L.EGUP_NO_TARGET .. COLOR.reset); return
-    end
-    if not UnitIsPlayer("target") then
-        self:Print(COLOR.bad .. L.EGUP_NOT_PLAYER .. COLOR.reset); return
-    end
-
-    local targetName = UnitName("target")
-    local _, class   = UnitClass("target")
-    local faction    = UnitFactionGroup and UnitFactionGroup("target") or nil
-
-    if not targetName then
-        self:Print(COLOR.bad .. L.EGUP_NO_TARGET .. COLOR.reset); return
-    end
-    if not class then
-        self:Print(COLOR.bad .. L.EGUP_NO_CLASS .. COLOR.reset); return
-    end
-
-    local package = self:GetEGUPPackage(class, faction)
-    if not package or #package == 0 then
-        self:Print(COLOR.bad .. sformat(L.EGUP_NO_PACKAGE, class) .. COLOR.reset); return
-    end
-
-    if self.db.egupConfirm then
-        self.pendingEGUP = { name = targetName, class = class, faction = faction }
-        local dialog = StaticPopup_Show("EASYGEAR_EGUP_CONFIRM",
-            sformat(L.EGUP_CONFIRM, class, #package, targetName))
-        if dialog then dialog.data = self.pendingEGUP end
-        return
-    end
-
-    self:StartEGUP(targetName, class, faction)
-end
-
-------------------------------------------------------------------------------
--- 15a  EGUPCLEAN
-------------------------------------------------------------------------------
-
-function EG:IsItemIDEquipped(itemID)
-    itemID = tonumber(itemID)
-    if not itemID then return false end
-    for slot = 1, MAX_EQUIP_SLOT do
-        local link = GetInventoryItemLink("player", slot)
-        if link and self:GetItemIDFromLink(link) == itemID then
-            return true
-        end
-    end
-    return false
-end
-
-function EG:GetBagItemLocations(itemID)
-    local locations = {}
-    itemID = tonumber(itemID)
-    if not itemID then return locations end
-
-    for bagID = 0, (NUM_BAG_SLOTS or 4) do
-        local numSlots = GetContainerNumSlots(bagID) or 0
-        for slotID = 1, numSlots do
-            local link = GetContainerItemLink(bagID, slotID)
-            if link and self:GetItemIDFromLink(link) == itemID then
-                local _, count = GetContainerItemInfo(bagID, slotID)
-                locations[#locations + 1] = {
-                    bag = bagID, slot = slotID, count = tonumber(count) or 1, link = link,
-                }
-            end
-        end
-    end
-    return locations
-end
-
-function EG:DeleteBagSlot(bagID, slotID, count, stackSize)
-    if CursorHasItem() then ClearCursor() end
-
-    if count and stackSize and count < stackSize and SplitContainerItem then
-        SplitContainerItem(bagID, slotID, count)
-    else
-        PickupContainerItem(bagID, slotID)
-    end
-
-    if CursorHasItem() then
-        DeleteCursorItem()
-        return true
-    end
-    ClearCursor()
-    return false
-end
-
---[[ Entfernt bis zu requestedCount Exemplare eines Items aus den Taschen.
-     Angelegte Exemplare bleiben unangetastet; ein angelegtes Exemplar
-     reduziert die zu loeschende Menge um eins.                            ]]
-function EG:CleanupEGUPItem(itemID, requestedCount, callback)
-    local locations = self:GetBagItemLocations(itemID)
-    if #locations == 0 then
-        if callback then callback(0) end
-        return
-    end
-
-    local remaining = tonumber(requestedCount) or 0
-    if self:IsItemIDEquipped(itemID) then
-        remaining = remaining - 1
-    end
-
-    local index, removed = 1, 0
-
-    local function DeleteNext()
-        if remaining <= 0 or index > #locations then
-            if callback then callback(removed) end
-            return
-        end
-
-        local loc = locations[index]
-        index = index + 1
-
-        local deleteCount = mmin(loc.count, remaining)
-        if deleteCount > 0 then
-            if self:DeleteBagSlot(loc.bag, loc.slot, deleteCount, loc.count) then
-                remaining = remaining - deleteCount
-                removed   = removed + deleteCount
-            end
-        end
-
-        self:After(0.12, DeleteNext)
-    end
-
-    DeleteNext()
-end
-
-function EG:RunEGUPClean()
-    local session = self.charDB and self.charDB.egup
-    if not session or not session.active then
-        self:Print(COLOR.bad .. L.EGUP_NO_SESSION .. COLOR.reset); return
-    end
-
-    local playerName = UnitName("player")
-    if session.targetName and playerName and session.targetName ~= playerName then
-        -- Zusaetzliche GUID-Pruefung, falls verfuegbar
-        if session.targetGUID and session.targetGUID ~= UnitGUID("player") then
-            self:Print(COLOR.bad .. sformat(L.EGUP_WRONG_CHAR,
-                tostring(session.targetName)) .. COLOR.reset)
-            return
-        end
-    end
-
-    self:Print(L.EGUP_CLEAN_START)
-
-    local list = {}
-    for _, data in pairs(session.items) do list[#list + 1] = data end
-    if #list == 0 then
-        self:Print(L.EGUP_CLEAN_NONE); return
-    end
-
-    local index, totalRemoved = 1, 0
-    local function CleanNext()
-        if index > #list then
-            self:Print(COLOR.good .. sformat(L.EGUP_CLEAN_DONE, totalRemoved) .. COLOR.reset)
-            session.active = false
-            return
-        end
-        local data = list[index]
-        index = index + 1
-        self:CleanupEGUPItem(data.id, data.count, function(removed)
-            totalRemoved = totalRemoved + (removed or 0)
-            self:After(0.10, CleanNext)
-        end)
-    end
-
-    CleanNext()
-end
 
 ------------------------------------------------------------------------------
 -- 16  Chat-Ausgabe & Slash-Befehle
@@ -3116,7 +2986,7 @@ function EG:PrintBreakdown(rows, total)
 end
 
 function EG:PrintReport(itemLink)
-    local result = self:Compare(itemLink)
+    local result = self:Compare(itemLink, true)
     if not result then
         self:Print(COLOR.bad .. L.INVALID_ITEM .. COLOR.reset)
         self:Print(L.ITEM_LOADING)
@@ -3143,13 +3013,15 @@ function EG:PrintReport(itemLink)
     if EG:IsHeirloomItem(item) then
         self:Raw(COLOR.warn .. L.HEIRLOOM .. COLOR.reset)
     end
-    if item.enchanted or (item.gemCount or 0) > 0 then
+    if item.enchanted or (item.gemCount or 0) > 0 or item.hasExtraStats then
         local parts = {}
         if item.enchanted then parts[#parts + 1] = L.ENCHANTED end
         if (item.gemCount or 0) > 0 then
             parts[#parts + 1] = sformat(L.GEMMED, item.gemCount)
         end
-        self:Raw(COLOR.good .. tconcat(parts, ", ") .. COLOR.reset)
+        if #parts > 0 then
+            self:Raw(COLOR.good .. tconcat(parts, ", ") .. COLOR.reset)
+        end
     end
     if (item.sellPrice or 0) > 0 and GetCoinTextureString then
         self:Raw(L.SELLPRICE .. ": " .. GetCoinTextureString(item.sellPrice))
@@ -3159,6 +3031,12 @@ function EG:PrintReport(itemLink)
     self:Raw(COLOR.title .. L.CANDIDATE .. " - " .. L.POINTS .. COLOR.reset)
     self:PrintBreakdown(result.breakdown, result.score)
 
+    if result.noCompare then
+        if result.note then self:Raw(COLOR.grey .. result.note .. COLOR.reset) end
+        self:Raw(COLOR.title .. "====================" .. COLOR.reset)
+        return
+    end
+
     self:Raw(LINE)
     self:Raw(COLOR.title .. L.EQUIPPED .. COLOR.reset)
     if not result.equipped or #result.equipped == 0 then
@@ -3166,12 +3044,13 @@ function EG:PrintReport(itemLink)
     else
         for _, e in ipairs(result.equipped) do
             local slotName = self:GetSlotName(e.slotID)
+            local mark = (e == result.target) and (COLOR.good .. "> " .. COLOR.reset) or ""
             if e.empty then
-                self:Raw(sformat("%s: %s%s%s", slotName, COLOR.warn, L.NOTHING_EQUIPPED, COLOR.reset))
+                self:Raw(sformat("%s%s: %s%s%s", mark, slotName, COLOR.warn, L.NOTHING_EQUIPPED, COLOR.reset))
             else
-                self:Raw(sformat("%s: %s", slotName, e.link or e.item.link))
+                self:Raw(sformat("%s%s: %s", mark, slotName, e.link or e.item.link))
                 if e.isHeirloom then
-                    self:Raw("  " .. COLOR.warn .. L.HEIRLOOM .. " (" .. L.PROTECTED .. ")" .. COLOR.reset)
+                    self:Raw("  " .. COLOR.warn .. L.HEIRLOOM .. COLOR.reset)
                 end
                 self:PrintBreakdown(e.breakdown, e.score)
             end
@@ -3181,17 +3060,17 @@ function EG:PrintReport(itemLink)
     self:Raw(LINE)
     if result.usable ~= true then
         self:Raw(COLOR.bad .. L.NOT_USABLE .. COLOR.reset .. " " .. tostring(result.reason or ""))
-    elseif result.protected then
-        self:Raw(COLOR.warn .. L.NO_UPGRADE .. COLOR.reset .. " " .. tostring(result.reason or ""))
     else
         local delta = result.delta or 0
         local sign  = delta > 0 and "+" or ""
         local col   = result.isUpgrade and COLOR.good or (delta > 0 and COLOR.warn or COLOR.bad)
-        self:Raw(sformat("%s: %s%s%s   %s -> %s",
-            L.DIFFERENCE, col, sign .. FmtScore(delta), COLOR.reset,
+        local pct   = result.percent and ("  (" .. FmtPct(result.percent) .. ")") or ""
+        self:Raw(sformat("%s: %s%s%s%s   %s -> %s",
+            L.DIFFERENCE, col, sign .. FmtScore(delta), pct, COLOR.reset,
             FmtScore(result.targetScore), FmtScore(result.score)))
         if result.isUpgrade then
-            self:Raw(COLOR.good .. ">> " .. L.UPGRADE .. COLOR.reset)
+            self:Raw(COLOR.good .. ">> " .. L.UPGRADE .. COLOR.reset
+                .. (result.reason and (" " .. result.reason) or ""))
         else
             self:Raw(COLOR.bad .. ">> " .. L.NO_UPGRADE .. COLOR.reset
                 .. " " .. tostring(result.reason or ""))
@@ -3207,27 +3086,41 @@ end
 
 local function OnOff(v) return v and L.SET_ON or L.SET_OFF end
 
+-- Befehl, Beschreibungsschluessel. Die Befehle selbst sind in jeder Sprache gleich.
+local HELP = {
+    { "/eg",                                  "H_EG" },
+    { "/eg <itemlink>",                       "H_EG_LINK" },
+    { "/eg upgrades",                         "H_UPGRADES" },
+    { "/eggui",                               "H_GUI" },
+    { "/egprofile",                           "H_PROFILE_WIN" },
+    { "/eg profile list",                     "H_PROFILE_LIST" },
+    { "/eg profile <id|auto>",                "H_PROFILE_SET" },
+    { "/eg autolevel [on|off]",               "H_AUTOLEVEL" },
+    { "/eg pvp",                              "H_PVP" },
+    { "/eg role <auto|tank|melee|ranged|caster|heal>", "H_ROLE" },
+    { "/eg heirloom [on|off]",                "H_HEIRLOOM" },
+    { "/eg heirloombonus <1.0-3.0>",          "H_HEIRLOOMBONUS" },
+    { "/eg enchants [on|off]",                "H_ENCHANTS" },
+    { "/eg socket <number|auto>",             "H_SOCKET" },
+    { "/eg ilvl <number>",                    "H_ILVL" },
+    { "/eg ilvlscale [on|off]",               "H_ILVLSCALE" },
+    { "/eg mindelta <number>",                "H_MINDELTA" },
+    { "/eg mindeltapct <percent>",            "H_MINDELTAPCT" },
+    { "/eg icons | quest | items | tooltip | diff", "H_TOGGLES" },
+    { "/eg scale <0.5-2.0>",                  "H_SCALE" },
+    { "/eg status",                           "H_STATUS" },
+    { "/eg locale",                           "H_LOCALE" },
+    { "/eg reset",                            "H_RESET" },
+    { "/egup",                                "H_EGUP" },
+    { "/egup list|verify [class]",            "H_EGUP_LIST" },
+    { "/egupclean [list]",                    "H_EGUPCLEAN" },
+}
+
 function EG:PrintHelp()
     self:Raw(COLOR.title .. "EasyGear " .. ADDON_VERSION .. COLOR.reset)
-    self:Raw(COLOR.value .. "/eg" .. COLOR.reset .. "                  " .. L.CMD_EG)
-    self:Raw(COLOR.value .. "/eg <itemlink>" .. COLOR.reset .. "       " .. L.CMD_EG_LINK)
-    self:Raw(COLOR.value .. "/eggui" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/egprofile" .. COLOR.reset .. "           " .. L.CMD_EGPROFILE)
-    self:Raw(COLOR.value .. "/eg profile list" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/eg profile <id|auto>" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/eg pvp" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/eg role <auto|tank|melee|ranged|caster|heal>" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/eg ilvl <zahl>" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/eg ilvlscale <on|off>" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/eg mindelta <zahl>" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/eg mindeltapct <prozent>" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/eg icons | quest | tooltip | heirloom" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/eg scale <0.6-1.5>" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/eg status" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/eg reset" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/egup" .. COLOR.reset .. "                " .. L.CMD_EGUP)
-    self:Raw(COLOR.value .. "/egup list|verify" .. COLOR.reset)
-    self:Raw(COLOR.value .. "/egupclean" .. COLOR.reset .. "           " .. L.CMD_EGUPCLEAN)
+    for _, h in ipairs(HELP) do
+        self:Raw(COLOR.value .. h[1] .. COLOR.reset .. "  " .. COLOR.grey .. L[h[2]] .. COLOR.reset)
+    end
 end
 
 function EG:PrintProfileList()
@@ -3255,17 +3148,106 @@ function EG:PrintStatus()
     self:Raw(COLOR.title .. "EasyGear " .. ADDON_VERSION .. COLOR.reset)
     self:Raw(L.PROFILE .. ": " .. COLOR.value .. tostring(profileName) .. COLOR.reset
         .. "  [" .. tostring(self:GetActiveProfileID()) .. "]")
-    self:Raw("PvP: " .. OnOff(self:IsPvPMode()))
+    self:Raw("PvP: " .. OnOff(self:IsPvPMode()) .. " | " .. L.ST_AUTOLEVEL .. ": " .. OnOff(self.db.autoLeveling))
     local eff, base, factor = self:GetEffectiveIlvlWeight()
     self:Raw(L.SET_ILVL:format(FmtWeight(base) .. " -> " .. FmtWeight(eff)))
     self:Raw(L.SET_ILVLSCALE:format(OnOff(self.db.ilvlScaling ~= false),
         FmtWeight(factor)))
     self:Raw(L.SET_MINDELTA:format(FmtScore(self.db.minDelta or 0),
         tostring(self.db.minDeltaPercent or 0)))
+    self:Raw(L.ST_ENCHANTS .. ": " .. OnOff(self.db.includeEnchants ~= false)
+        .. " | " .. L.SOCKETS .. ": " .. (tonumber(self.db.socketValue) and tostring(self.db.socketValue)
+            or (L.ROLE_AUTO .. " " .. FmtScore(self:GetSocketPoints()))))
+    self:Raw(L.HEIRLOOM .. ": " .. OnOff(self.db.protectHeirlooms)
+        .. " x" .. FmtWeight(tonumber(self.db.heirloomBonus) or 1)
+        .. " (" .. L.ST_NOW .. " x" .. FmtWeight(self:GetHeirloomFactor()) .. ")")
     self:Raw("Bags: " .. OnOff(self.db.showBagIcons)
         .. " | Quest: " .. OnOff(self.db.showQuestIcons)
+        .. " | " .. L.ST_ITEMS .. ": " .. OnOff(self.db.showItemIcons)
         .. " | Tooltip: " .. OnOff(self.db.showTooltip)
-        .. " | " .. L.HEIRLOOM .. ": " .. OnOff(self.db.protectHeirlooms))
+        .. " | " .. L.ST_DIFF .. ": " .. OnOff(self.db.tooltipDiff))
+end
+
+--[[ /eg upgrades: alle Verbesserungen in den Taschen (und der Bank, wenn offen),
+     die groesste zuerst. Ein leerer Slot geht vor, danach nach Prozent.      ]]
+function EG:CollectUpgrades()
+    local found = {}
+    local bags = {}
+    for bagID = 0, (NUM_BAG_SLOTS or 4) do bags[#bags + 1] = bagID end
+    if BankFrame and BankFrame:IsShown() then
+        bags[#bags + 1] = BANK_CONTAINER or -1
+        local first = (NUM_BAG_SLOTS or 4) + 1
+        for bagID = first, first + (NUM_BANKBAGSLOTS or 7) - 1 do bags[#bags + 1] = bagID end
+    end
+
+    for _, bagID in ipairs(bags) do
+        for slotID = 1, (GetContainerNumSlots(bagID) or 0) do
+            local link = GetContainerItemLink(bagID, slotID)
+            if link then
+                local r = self:Compare(link)
+                if r and r.isUpgrade then
+                    local slotName = r.combined and r.slotName
+                        or self:GetSlotName(r.candSlot or (r.target and r.target.slotID))
+                    found[#found + 1] = {
+                        link = link, slot = slotName, delta = r.delta or 0,
+                        percent = r.percent, empty = r.target and r.target.empty,
+                    }
+                end
+            end
+        end
+    end
+
+    tsort(found, function(a, b)
+        if (a.empty and true or false) ~= (b.empty and true or false) then return a.empty and true or false end
+        return (a.percent or 0) > (b.percent or 0)
+    end)
+    return found
+end
+
+function EG:PrintUpgrades()
+    local found = self:CollectUpgrades()
+    if #found == 0 then
+        self:Print(L.UPGRADES_NONE)
+        return
+    end
+    self:Raw(COLOR.title .. L.UPGRADES_HEAD .. COLOR.reset)
+    for i, u in ipairs(found) do
+        if i > 25 then
+            self:Raw(COLOR.grey .. sformat("... +%d", #found - 25) .. COLOR.reset)
+            break
+        end
+        local gain = u.empty and L.NOTHING_EQUIPPED
+            or (("+" .. FmtScore(u.delta)) .. (u.percent and ("  (" .. FmtPct(u.percent) .. ")") or ""))
+        self:Raw(sformat("  %s  %s%s%s  %s%s%s", u.link, COLOR.grey, u.slot, COLOR.reset,
+            COLOR.good, gain, COLOR.reset))
+    end
+end
+
+-- /eg locale: welche Sprachdatei greift, woher kommen die Untertyp-Namen?
+function EG:PrintLocale()
+    local loc = self.locale or {}
+    self:Raw(COLOR.title .. "EasyGear - " .. L.LOCALE_HEAD .. COLOR.reset)
+    self:Raw(L.LOCALE_CLIENT .. ": " .. COLOR.value .. tostring(loc.client) .. COLOR.reset
+        .. "  ->  " .. L.LOCALE_FILE .. ": " .. COLOR.value .. tostring(loc.active) .. ".lang.lua" .. COLOR.reset
+        .. (loc.translated and "" or ("  " .. COLOR.warn .. "(" .. L.LOCALE_FALLBACK .. ")" .. COLOR.reset)))
+    self:Raw(L.LOCALE_LOADED .. ": " .. tconcat(loc.loaded or {}, ", "))
+    if not loc.baseOK then
+        self:Raw(COLOR.bad .. L.LOCALE_BROKEN .. COLOR.reset)
+    end
+    if not self.subtypeBuilt then self:BuildSubtypeTokens(true) end
+    local n = 0
+    for _ in pairs(ALL_TOKENS) do n = n + 1 end
+    local fromClient, fromLang = 0, 0
+    for token in pairs(ALL_TOKENS) do
+        if subtypeSource[token] == "client" then fromClient = fromClient + 1
+        elseif subtypeSource[token] == "lang" then fromLang = fromLang + 1 end
+    end
+    self:Raw(sformat("%s: %s%d/%d%s  (%s %d, %s %d)", L.LOCALE_SUBTYPES, COLOR.value,
+        fromClient + fromLang, n, COLOR.reset, L.LOCALE_FROM_CLIENT, fromClient,
+        L.LOCALE_FROM_LANG, fromLang))
+    if (self.subtypeMismatch or 0) > 0 then
+        self:Raw(COLOR.warn .. sformat(L.LOCALE_MISMATCH, self.subtypeMismatch) .. COLOR.reset)
+    end
 end
 
 local function Toggle(key)
@@ -3274,6 +3256,35 @@ local function Toggle(key)
     EG:InvalidateProfile()
     EG:RefreshAllBags()
     if EG.GUI then EG.GUI:Refresh() end
+end
+
+-- "on" / "off" / leer (= umschalten) -> neuer Wert
+local function ParseSwitch(arg, current)
+    arg = slower(arg or "")
+    if arg == "on" or arg == "1" or arg == "an" then return true end
+    if arg == "off" or arg == "0" or arg == "aus" then return false end
+    return not current
+end
+
+local function CopyDefaults(target, source)
+    for k, v in pairs(source) do
+        if type(v) == "table" then
+            if type(target[k]) ~= "table" then target[k] = {} end
+            CopyDefaults(target[k], v)
+        elseif target[k] == nil then
+            target[k] = v
+        end
+    end
+    return target
+end
+
+-- Aenderung einer Einstellung, die alle Bewertungen betrifft
+local function ApplySettingChange(wipeItems)
+    EG:InvalidateProfile()
+    if wipeItems then EG:WipeItemCache() end
+    EG:RefreshAllBags()
+    if EG.GUI then EG.GUI:Refresh() end
+    if EG.ProfileGUI then EG.ProfileGUI:Refresh() end
 end
 
 SLASH_EASYGEAR1 = "/eg"
@@ -3300,6 +3311,10 @@ SlashCmdList["EASYGEAR"] = function(msg)
         if EG.GUI then EG.GUI:Toggle() end; return
     elseif cmd == "status" then
         EG:PrintStatus(); return
+    elseif cmd == "locale" or cmd == "lang" then
+        EG:PrintLocale(); return
+    elseif cmd == "upgrades" or cmd == "upgrade" or cmd == "bags" then
+        EG:PrintUpgrades(); return
     elseif cmd == "profiles" or cmd == "profile" then
         if rest == "" or rest == "list" then
             EG:PrintProfileList()
@@ -3324,6 +3339,11 @@ SlashCmdList["EASYGEAR"] = function(msg)
         EG:SetPvPMode(not EG:IsPvPMode())
         EG:Print(L.SET_PVP:format(OnOff(EG:IsPvPMode())))
         return
+    elseif cmd == "autolevel" then
+        EG.db.autoLeveling = ParseSwitch(rest, EG.db.autoLeveling)
+        ApplySettingChange(false)
+        EG:Print(L.ST_AUTOLEVEL .. ": " .. OnOff(EG.db.autoLeveling))
+        return
     elseif cmd == "role" then
         -- Alter Befehl: waehlt das erste Profil der Klasse mit dieser Rolle
         local role = string.upper(rest or "")
@@ -3341,37 +3361,60 @@ SlashCmdList["EASYGEAR"] = function(msg)
         end
         EG:Print("auto | tank | melee | ranged | caster | heal")
         return
+    elseif cmd == "heirloom" then
+        EG.db.protectHeirlooms = ParseSwitch(rest, EG.db.protectHeirlooms)
+        ApplySettingChange(false)
+        EG:Print(L.HEIRLOOM .. ": " .. OnOff(EG.db.protectHeirlooms))
+        return
+    elseif cmd == "heirloombonus" then
+        local v = tonumber(rest)
+        if v then
+            EG.db.heirloomBonus = mmax(1.0, mmin(3.0, v))
+            ApplySettingChange(false)
+        end
+        EG:Print(L.HEIRLOOM .. ": x" .. FmtWeight(EG.db.heirloomBonus)
+            .. " (" .. L.ST_NOW .. " x" .. FmtWeight(EG:GetHeirloomFactor()) .. ")")
+        return
+    elseif cmd == "enchants" then
+        EG.db.includeEnchants = ParseSwitch(rest, EG.db.includeEnchants ~= false)
+        ApplySettingChange(true)
+        EG:Print(L.ST_ENCHANTS .. ": " .. OnOff(EG.db.includeEnchants))
+        return
+    elseif cmd == "socket" then
+        if slower(rest) == "auto" then
+            EG.db.socketValue = nil
+            ApplySettingChange(false)
+        elseif tonumber(rest) then
+            EG.db.socketValue = tonumber(rest)
+            ApplySettingChange(false)
+        end
+        EG:Print(L.SOCKETS .. ": " .. (tonumber(EG.db.socketValue) and tostring(EG.db.socketValue)
+            or (L.ROLE_AUTO .. " " .. FmtScore(EG:GetSocketPoints()))))
+        return
     elseif cmd == "ilvl" then
         local v = tonumber(rest)
         if v then
             EG.db.ilvlWeight = v
-            EG:InvalidateProfile()
-            EG:RefreshAllBags()
-            if EG.GUI then EG.GUI:Refresh() end
+            ApplySettingChange(false)
         end
         local eff = EG:GetEffectiveIlvlWeight()
         EG:Print(L.SET_ILVL:format(FmtWeight(EG.db.ilvlWeight) .. " -> " .. FmtWeight(eff)))
         return
     elseif cmd == "mindelta" then
         local v = tonumber(rest)
-        if v then EG.db.minDelta = v; EG:InvalidateProfile(); EG:RefreshAllBags() end
+        if v then EG.db.minDelta = v; ApplySettingChange(false) end
         EG:Print(L.SET_MINDELTA:format(FmtScore(EG.db.minDelta or 0),
             tostring(EG.db.minDeltaPercent or 0)))
         return
     elseif cmd == "mindeltapct" then
         local v = tonumber(rest)
-        if v then EG.db.minDeltaPercent = v; EG:InvalidateProfile(); EG:RefreshAllBags() end
+        if v then EG.db.minDeltaPercent = v; ApplySettingChange(false) end
         EG:Print(L.SET_MINDELTA:format(FmtScore(EG.db.minDelta or 0),
             tostring(EG.db.minDeltaPercent or 0)))
         return
     elseif cmd == "ilvlscale" then
-        if rest == "on"  then EG.db.ilvlScaling = true  end
-        if rest == "off" then EG.db.ilvlScaling = false end
-        if rest == ""    then EG.db.ilvlScaling = (EG.db.ilvlScaling == false) end
-        EG:InvalidateProfile()
-        EG:WipeItemCache()
-        EG:RefreshAllBags()
-        if EG.GUI then EG.GUI:Refresh() end
+        EG.db.ilvlScaling = ParseSwitch(rest, EG.db.ilvlScaling ~= false)
+        ApplySettingChange(true)
         local eff, _, factor = EG:GetEffectiveIlvlWeight()
         EG:Print(L.SET_ILVLSCALE:format(OnOff(EG.db.ilvlScaling ~= false),
             FmtWeight(factor)) .. "  ->  " .. FmtWeight(eff))
@@ -3380,10 +3423,12 @@ SlashCmdList["EASYGEAR"] = function(msg)
         Toggle("showBagIcons"); return
     elseif cmd == "quest" then
         Toggle("showQuestIcons"); return
+    elseif cmd == "items" then
+        Toggle("showItemIcons"); return
     elseif cmd == "tooltip" then
         Toggle("showTooltip"); return
-    elseif cmd == "heirloom" then
-        Toggle("protectHeirlooms"); return
+    elseif cmd == "diff" then
+        Toggle("tooltipDiff"); return
     elseif cmd == "debug" then
         Toggle("debug"); return
     elseif cmd == "scale" then
@@ -3395,14 +3440,18 @@ SlashCmdList["EASYGEAR"] = function(msg)
         EG:Print(L.SET_SCALE:format(tostring(EG.charDB.gui.scale)))
         return
     elseif cmd == "reset" then
-        for k, v in pairs(DEFAULTS) do EG.db[k] = v end
+        -- eigene Profile bleiben erhalten
+        for k in pairs(EG.db) do
+            if k ~= "custom" then EG.db[k] = nil end
+        end
+        CopyDefaults(EG.db, DEFAULTS)
+        EG.db.version = ADDON_VERSION
         EG.charDB.role    = "AUTO"
         EG.charDB.profile = "AUTO"
         EG.charDB.pvp     = false
         EG.charDB.gui     = { point = "CENTER", x = 0, y = 0, scale = 1.0 }
-        EG:InvalidateProfile()
-        EG:WipeItemCache()
-        EG:RefreshAllBags()
+        EG:InvalidateTalents()
+        ApplySettingChange(true)
         if EG.GUI and EG.GUI.frame then
             EG.GUI.frame:ClearAllPoints()
             EG.GUI.frame:SetPoint("CENTER")
@@ -3412,7 +3461,7 @@ SlashCmdList["EASYGEAR"] = function(msg)
         return
     end
 
-    -- Itemname oder Item-ID
+    -- Item-ID
     local id = tonumber(rest ~= "" and rest or cmd)
     if id then
         local _, link = GetItemInfo(id)
@@ -3439,61 +3488,24 @@ SlashCmdList["EASYGEARPROFILE"] = function()
     if EG.ProfileGUI then EG.ProfileGUI:Toggle() else EG:PrintProfileList() end
 end
 
-SLASH_EGUP1 = "/egup"
-SlashCmdList["EGUP"] = function(msg)
-    local cmd, rest = smatch(msg or "", "^%s*(%S*)%s*(.-)%s*$")
-    cmd = slower(cmd or "")
-
-    if cmd == "verify" or cmd == "check" or cmd == "pruefen" then
-        local class = rest ~= "" and string.upper(rest) or nil
-        EG:VerifyHeirlooms(class)
-        return
-    elseif cmd == "list" or cmd == "paket" then
-        local class = rest ~= "" and string.upper(rest) or nil
-        local faction
-        if not class and UnitExists("target") and UnitIsPlayer("target") then
-            class   = select(2, UnitClass("target"))
-            faction = UnitFactionGroup and UnitFactionGroup("target") or nil
-        end
-        if not faction then
-            faction = UnitFactionGroup and UnitFactionGroup("player") or nil
-        end
-        EG:PrintEGUPPackage(class or EG:GetPlayerClass(), faction)
-        return
-    elseif cmd == "help" or cmd == "?" then
-        EG:Raw(COLOR.value .. "/egup" .. COLOR.reset .. "               " .. L.CMD_EGUP)
-        EG:Raw(COLOR.value .. "/egup list [klasse]" .. COLOR.reset)
-        EG:Raw(COLOR.value .. "/egup verify [klasse]" .. COLOR.reset)
-        return
-    end
-
-    EG:RunEGUP()
-end
-
-SLASH_EGUPCLEAN1 = "/egupclean"
-SlashCmdList["EGUPCLEAN"] = function() EG:RunEGUPClean() end
 
 ------------------------------------------------------------------------------
 -- 17  Initialisierung
 ------------------------------------------------------------------------------
 
-local function CopyDefaults(target, source)
-    for k, v in pairs(source) do
-        if type(v) == "table" then
-            if type(target[k]) ~= "table" then target[k] = {} end
-            CopyDefaults(target[k], v)
-        elseif target[k] == nil then
-            target[k] = v
-        end
-    end
-    return target
-end
-
 function EG:InitDB()
     EasyGearDB     = EasyGearDB     or {}
     EasyGearCharDB = EasyGearCharDB or {}
+    local previous = EasyGearDB.version
+
     self.db     = CopyDefaults(EasyGearDB, DEFAULTS)
     self.charDB = CopyDefaults(EasyGearCharDB, CHAR_DEFAULTS)
+
+    -- Migration: bis 2.x war 8 Punkte pro freiem Sockel der Standard; jetzt
+    -- gilt "automatisch". Ein dort gespeicherter 8er ist kein Nutzerwunsch.
+    if previous and VersionLess(previous, "3.0.0") and tonumber(self.db.socketValue) == 8 then
+        self.db.socketValue = nil
+    end
     self.db.version = ADDON_VERSION
 
     -- Alte Sitzung wiederherstellen (relog-fest)
@@ -3510,12 +3522,16 @@ eventFrame:RegisterEvent("BAG_UPDATE")
 eventFrame:RegisterEvent("QUEST_COMPLETE")
 eventFrame:RegisterEvent("QUEST_DETAIL")
 eventFrame:RegisterEvent("QUEST_ITEM_UPDATE")
+-- Talentwechsel (Doppelspezialisierung); nicht jeder 3.3.5a-Fork kennt alle Namen
+pcall(eventFrame.RegisterEvent, eventFrame, "PLAYER_TALENT_UPDATE")
+pcall(eventFrame.RegisterEvent, eventFrame, "ACTIVE_TALENT_GROUP_CHANGED")
 
 eventFrame:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
             EG:InitDB()
         end
+        if EG.OnAddonLoaded then EG:OnAddonLoaded(arg1) end
         return
     end
 
@@ -3525,17 +3541,13 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 
         EG:Print(sformat(L.LOADED, ADDON_VERSION))
         EG:Raw(COLOR.grey .. L.CMD_HEADER .. "  " .. COLOR.value
-            .. "/eg  /eggui  /egup  /egupclean" .. COLOR.reset)
-
-        -- Taschen-Integrationen
-        if IsAddOnLoaded("ElvUI") then
-            EG:HookElvUI()
-        elseif IsAddOnLoaded("Bagnon") then
-            EG:HookBagnon()
+            .. "/eg  /eggui  /egprofile  /egup  /egupclean" .. COLOR.reset)
+        if not EG.locale.baseOK then
+            EG:Print(COLOR.bad .. L.LOCALE_BROKEN .. COLOR.reset)
         end
-        -- Blizzard-Taschen zusaetzlich haken (Bank / Fallback)
-        EG:HookDefaultBags()
-        EG:HookBank()
+
+        -- Taschen, Haendler, Beute usw.
+        if EG.HookOverlays then EG:HookOverlays() end
 
         EG:HookQuestRewards()
         if IsAddOnLoaded("Immersion") then
@@ -3552,28 +3564,33 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         return
     end
 
-    if event == "PLAYER_LEVEL_UP" or event == "CHARACTER_POINTS_CHANGED" then
+    if event == "PLAYER_LEVEL_UP" or event == "CHARACTER_POINTS_CHANGED"
+        or event == "PLAYER_TALENT_UPDATE" or event == "ACTIVE_TALENT_GROUP_CHANGED" then
+        EG:InvalidateTalents()
         EG:InvalidateProfile()
         EG:WipeItemCache()
         EG:InvalidateEquippedTotals()
         EG:Debounce("refresh", 0.5, function()
             EG:RefreshAllBags()
             if EG.GUI then EG.GUI:Refresh() end
+            if EG.ProfileGUI then EG.ProfileGUI:Refresh() end
         end)
         return
     end
 
     if event == "UNIT_INVENTORY_CHANGED" then
         if arg1 == "player" then
-            -- Die Slot-Aufloesung haengt jetzt davon ab, ob eine
-            -- Zweihandwaffe gefuehrt wird - deshalb alle Taschen-Buttons
-            -- ueber die Epoche invalidieren, nicht nur den Score-Cache.
-            EG.scoreCache = {}
-            EG.epoch = (EG.epoch or 0) + 1
+            --[[ Die Slot-Aufloesung haengt davon ab, ob eine Zweihandwaffe
+                 gefuehrt wird, die automatische Profilwahl von der
+                 Waffenhaltung - deshalb alles verwerfen, nicht nur den
+                 Score-Cache.                                              ]]
+            if EG:GetActiveProfileID() == "AUTO" then EG.profileCache = nil end
+            EG:InvalidateComparisons()
             EG:InvalidateEquippedTotals()
             EG:Debounce("inv", 0.3, function()
                 EG:RefreshAllBags()
                 if EG.GUI then EG.GUI:Refresh() end
+                if EG.ProfileGUI then EG.ProfileGUI:Refresh() end
             end)
         end
         return
