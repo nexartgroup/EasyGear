@@ -1,18 +1,33 @@
 ## Interface: 30300
 ## Title: EasyGear
-## Title-deDE: EasyGear
-## Notes: Gear evaluation, upgrade detection and item comparison for WotLK 3.3.5a
-## Notes-deDE: Item-Bewertung, Upgrade-Erkennung und Ausruestungsvergleich fuer 3.3.5a
+## Notes: Gear evaluation, upgrade detection and item comparison for WotLK 3.3.5a - in bags, quest rewards, vendors, loot and auctions
+## Notes-deDE: Item-Bewertung, Upgrade-Erkennung und Ausruestungsvergleich fuer 3.3.5a - in Taschen, Questbelohnungen, bei Haendlern, Beute und Auktionen
+## Notes-frFR: Evaluation d'equipement, detection d'ameliorations et comparaison d'objets pour WotLK 3.3.5a
+## Notes-esES: Evaluacion de equipo, deteccion de mejoras y comparacion de objetos para WotLK 3.3.5a
+## Notes-esMX: Evaluacion de equipo, deteccion de mejoras y comparacion de objetos para WotLK 3.3.5a
 ## Author: nexartgroup
-## Version: 2.6.0
+## Version: 3.0.0
 ## SavedVariables: EasyGearDB
 ## SavedVariablesPerCharacter: EasyGearCharDB
 ## OptionalDeps: ElvUI, Bagnon, Immersion
 ## X-Category: Inventory
 ## X-Website: https://github.com/nexartgroup/EasyGear
 
+# Sprachdateien: eine je Clientsprache, Englisch (enUS) ist die vollstaendige Referenz.
+# enGB nutzt enUS, esMX nutzt esES. Nicht uebersetzte Texte fallen auf Englisch zurueck.
+Locales\enUS.lang.lua
+Locales\deDE.lang.lua
+Locales\frFR.lang.lua
+Locales\esES.lang.lua
+Locales\ruRU.lang.lua
+Locales\koKR.lang.lua
+Locales\zhCN.lang.lua
+Locales\zhTW.lang.lua
+
 EasyGear.lua
 EasyGearSpecs.lua
 EasyGearHeirlooms.lua
+EasyGearOverlays.lua
+EasyGearEGUP.lua
 EasyGearGUI.lua
 EasyGearProfileGUI.lua

@@ -1,7 +1,9 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.6.0 - Erbstuecke (WotLK 3.3.5a)
+    EasyGear 3.0.0 - Erbstuecke (WotLK 3.3.5a)
 
-    Alle 37 Erbstuecke aus 3.3.5a. Die IDs sind gegen den Server geprueft.
+    Alle 37 Erbstuecke aus 3.3.5a. Die IDs sind gegen den Server geprueft;
+    /egup verify prueft sie jederzeit erneut gegen den Client und kontrolliert
+    zusaetzlich jedes Klassenpaket (siehe unten).
 
     Wechselnde Ruestungsklasse
     --------------------------
@@ -10,7 +12,7 @@
         Kette  zaehlt unterhalb von Stufe 40 als Leder
         Platte zaehlt unterhalb von Stufe 40 als Kette
 
-    Ein Schamane kann die "Todesbotenbrustplatte des Champions" also ab
+    Ein Schamane kann die Todesbotenbrustplatte des Champions also ab
     Stufe 1 tragen, obwohl sie als Kette gefuehrt wird. Krieger und Paladin
     tragen die Plattenteile von Anfang an, weil sie unter 40 als Kette
     gelten und beide Klassen Kette ab Stufe 1 beherrschen.
@@ -28,11 +30,14 @@
 
     Felder
     ------
-      name     gepruefter deutscher Name (angezeigt wird der Name aus dem
-               Client, dieser dient der Kontrolle)
+      en       englischer Name (angezeigt wird der Name aus dem Client, dieser
+               dient nur als Notanzeige und zur Kontrolle)
       loc      erwarteter Ausruestungsplatz
       armor    Ruestungsklasse ab Stufe 40
       weapon   Waffentyp
+      stat     Hauptattribut: MELEE_STR, MELEE_AGI, CASTER (Intelligenz /
+               Zaubermacht), HEAL (wie CASTER, fuer Heiler gedacht), MELEE
+               (Schmuck: Angriffskraft), PVP, ANY
       faction  nur fuer die PvP-Insignien
 -----------------------------------------------------------------------------]]
 
@@ -42,64 +47,66 @@ if not EG then return end
 EG.HEIRLOOMS = {
 
     ------------------------------------------------------------------- SCHMUCK
-    [42991] = { name = "Schnelle Hand der Gerechtigkeit", loc = "INVTYPE_TRINKET", stat = "MELEE" },
-    [42992] = { name = "Scharfes Auge der Bestie", loc = "INVTYPE_TRINKET", stat = "CASTER" },
-    [44098] = { name = "Geerbtes Insigne der Allianz", loc = "INVTYPE_TRINKET", stat = "PVP", faction = "Alliance" },
-    [44097] = { name = "Geerbtes Insigne der Horde", loc = "INVTYPE_TRINKET", stat = "PVP", faction = "Horde" },
+    [42991] = { en = "Swift Hand of Justice", loc = "INVTYPE_TRINKET", stat = "MELEE" },
+    [42992] = { en = "Discerning Eye of the Beast", loc = "INVTYPE_TRINKET", stat = "CASTER" },
+    [44098] = { en = "Inherited Insignia of the Alliance", loc = "INVTYPE_TRINKET", stat = "PVP", faction = "Alliance" },
+    [44097] = { en = "Inherited Insignia of the Horde", loc = "INVTYPE_TRINKET", stat = "PVP", faction = "Horde" },
 
     --------------------------------------------------------------------- STOFF
-    [48691] = { name = "Zerlumpte Robe der Furcht", loc = "INVTYPE_CHEST", armor = "CLOTH", stat = "CASTER" },
-    [42985] = { name = "Zerlumpter Mantel der Furcht", loc = "INVTYPE_SHOULDER", armor = "CLOTH", stat = "CASTER" },
-    [44107] = { name = "Exquisiter Mantel des blinden Sehers", loc = "INVTYPE_SHOULDER", armor = "CLOTH", stat = "CASTER" },
+    [48691] = { en = "Tattered Dreadmist Robe", loc = "INVTYPE_CHEST", armor = "CLOTH", stat = "CASTER" },
+    [42985] = { en = "Tattered Dreadmist Mantle", loc = "INVTYPE_SHOULDER", armor = "CLOTH", stat = "CASTER" },
+    [44107] = { en = "Exquisite Sunderseer Mantle", loc = "INVTYPE_SHOULDER", armor = "CLOTH", stat = "CASTER" },
 
     --------------------------------------------------------------------- LEDER
-    [48689] = { name = "Befleckte Tunika der Schattenkunst", loc = "INVTYPE_CHEST", armor = "LEATHER", stat = "MELEE_AGI" },
-    [42952] = { name = "Befleckte Schiftung der Schattenkunst", loc = "INVTYPE_SHOULDER", armor = "LEATHER", stat = "MELEE_AGI" },
-    [44103] = { name = "Au\195\159ergew\195\182hnliche Sturmschleierschultern", loc = "INVTYPE_SHOULDER", armor = "LEATHER", stat = "MELEE_AGI" },
-    [48687] = { name = "Geputzte Eisenfederbrustplatte", loc = "INVTYPE_CHEST", armor = "LEATHER", stat = "CASTER" },
-    [42984] = { name = "Geputzte Eisenfederschultern", loc = "INVTYPE_SHOULDER", armor = "LEATHER", stat = "CASTER" },
-    [44105] = { name = "Ausdauernde Schiftung des ungez\195\164hmten Herzens", loc = "INVTYPE_SHOULDER", armor = "LEATHER", stat = "CASTER" },
+    [48689] = { en = "Stained Shadowcraft Tunic", loc = "INVTYPE_CHEST", armor = "LEATHER", stat = "MELEE_AGI" },
+    [42952] = { en = "Stained Shadowcraft Spaulders", loc = "INVTYPE_SHOULDER", armor = "LEATHER", stat = "MELEE_AGI" },
+    [44103] = { en = "Exceptional Stormshroud Shoulders", loc = "INVTYPE_SHOULDER", armor = "LEATHER", stat = "MELEE_AGI" },
+    [48687] = { en = "Preened Ironfeather Breastplate", loc = "INVTYPE_CHEST", armor = "LEATHER", stat = "CASTER" },
+    [42984] = { en = "Preened Ironfeather Shoulders", loc = "INVTYPE_SHOULDER", armor = "LEATHER", stat = "CASTER" },
+    [44105] = { en = "Lasting Feralheart Spaulders", loc = "INVTYPE_SHOULDER", armor = "LEATHER", stat = "CASTER" },
 
     --------------------------------------------------------------------- KETTE
-    [48677] = { name = "Todesbotenbrustplatte des Champions", loc = "INVTYPE_CHEST", armor = "MAIL", stat = "MELEE_AGI" },
-    [42950] = { name = "Champion Herods Schulter", loc = "INVTYPE_SHOULDER", armor = "MAIL", stat = "MELEE_AGI" },
-    [44101] = { name = "Wertvoller Mantel der Tierherrschaft", loc = "INVTYPE_SHOULDER", armor = "MAIL", stat = "MELEE_AGI" },
-    [48683] = { name = "Mystische Weste der Elemente", loc = "INVTYPE_CHEST", armor = "MAIL", stat = "CASTER" },
-    [42951] = { name = "Mystische Schulterst\195\188cke der Elemente", loc = "INVTYPE_SHOULDER", armor = "MAIL", stat = "CASTER" },
-    [44102] = { name = "Alte Schulterst\195\188cke der f\195\188nf Donner", loc = "INVTYPE_SHOULDER", armor = "MAIL", stat = "CASTER" },
+    [48677] = { en = "Champion's Deathdealer Breastplate", loc = "INVTYPE_CHEST", armor = "MAIL", stat = "MELEE_AGI" },
+    [42950] = { en = "Champion Herod's Shoulder", loc = "INVTYPE_SHOULDER", armor = "MAIL", stat = "MELEE_AGI" },
+    [44101] = { en = "Prized Beastmaster's Mantle", loc = "INVTYPE_SHOULDER", armor = "MAIL", stat = "MELEE_AGI" },
+    [48683] = { en = "Mystical Vest of Elements", loc = "INVTYPE_CHEST", armor = "MAIL", stat = "CASTER" },
+    [42951] = { en = "Mystical Pauldrons of Elements", loc = "INVTYPE_SHOULDER", armor = "MAIL", stat = "CASTER" },
+    [44102] = { en = "Aged Pauldrons of The Five Thunders", loc = "INVTYPE_SHOULDER", armor = "MAIL", stat = "CASTER" },
 
     -------------------------------------------------------------------- PLATTE
-    [48685] = { name = "Polierte Brustplatte der Ehre", loc = "INVTYPE_CHEST", armor = "PLATE", stat = "MELEE_STR" },
-    [42949] = { name = "Polierte Schiftung der Ehre", loc = "INVTYPE_SHOULDER", armor = "PLATE", stat = "MELEE_STR" },
-    [44099] = { name = "Verst\195\164rkte Palisadenschulterst\195\188cke", loc = "INVTYPE_SHOULDER", armor = "PLATE", stat = "MELEE_STR" },
-    [44100] = { name = "Makellose Schiftung des Lichts", loc = "INVTYPE_SHOULDER", armor = "PLATE", stat = "HEAL" },
+    [48685] = { en = "Polished Breastplate of Valor", loc = "INVTYPE_CHEST", armor = "PLATE", stat = "MELEE_STR" },
+    [42949] = { en = "Polished Spaulders of Valor", loc = "INVTYPE_SHOULDER", armor = "PLATE", stat = "MELEE_STR" },
+    [44099] = { en = "Strengthened Stockade Pauldrons", loc = "INVTYPE_SHOULDER", armor = "PLATE", stat = "MELEE_STR" },
+    [44100] = { en = "Pristine Lightforge Spaulders", loc = "INVTYPE_SHOULDER", armor = "PLATE", stat = "HEAL" },
 
     ------------------------------------------------------------- EINHANDWAFFEN
-    [42944] = { name = "Ausbalancierter Herzsucher", loc = "INVTYPE_WEAPON", weapon = "DAGGER", stat = "MELEE_AGI" },
-    [44091] = { name = "Gesch\195\164rfter Scharlachroter Kris", loc = "INVTYPE_WEAPON", weapon = "DAGGER", stat = "MELEE_AGI" },
-    [42945] = { name = "Des ehrw\195\188rdigen Dal'Rends hochheilige Attacke", loc = "INVTYPE_WEAPONMAINHAND", weapon = "SWORD1", stat = "MELEE_AGI" },
-    [44096] = { name = "Kampferprobte Hauklinge", loc = "INVTYPE_WEAPON", weapon = "SWORD1", stat = "MELEE_STR" },
-    [48716] = { name = "Ehrw\195\188rdige Masse von McGowan", loc = "INVTYPE_WEAPON", weapon = "MACE1", stat = "MELEE_STR" },
-    [42948] = { name = "Frommer Aurasteinhammer", loc = "INVTYPE_WEAPONMAINHAND", weapon = "MACE1", stat = "HEAL" },
-    [44094] = { name = "Der gesegnete Hammer der Anmut", loc = "INVTYPE_WEAPONMAINHAND", weapon = "MACE1", stat = "HEAL" },
+    [42944] = { en = "Balanced Heartseeker", loc = "INVTYPE_WEAPON", weapon = "DAGGER", stat = "MELEE_AGI" },
+    [44091] = { en = "Sharpened Scarlet Kris", loc = "INVTYPE_WEAPON", weapon = "DAGGER", stat = "MELEE_AGI" },
+    [42945] = { en = "Venerable Dal'Rend's Sacred Charge", loc = "INVTYPE_WEAPONMAINHAND", weapon = "SWORD1", stat = "MELEE_AGI" },
+    [44096] = { en = "Battleworn Thrash Blade", loc = "INVTYPE_WEAPON", weapon = "SWORD1", stat = "MELEE_STR" },
+    [48716] = { en = "Venerable Mass of McGowan", loc = "INVTYPE_WEAPON", weapon = "MACE1", stat = "MELEE_STR" },
+    [42948] = { en = "Devout Aurastone Hammer", loc = "INVTYPE_WEAPONMAINHAND", weapon = "MACE1", stat = "HEAL" },
+    [44094] = { en = "The Blessed Hammer of Grace", loc = "INVTYPE_WEAPONMAINHAND", weapon = "MACE1", stat = "HEAL" },
 
     ------------------------------------------------------------ ZWEIHANDWAFFEN
-    [42943] = { name = "Blutbefleckter Arkanitschnitter", loc = "INVTYPE_2HWEAPON", weapon = "AXE2", stat = "MELEE_STR" },
-    [44092] = { name = "Neugeschmiedeter Echtsilberchampion", loc = "INVTYPE_2HWEAPON", weapon = "SWORD2", stat = "MELEE_STR" },
-    [48718] = { name = "Wiederverwendeter Lavagreifer", loc = "INVTYPE_2HWEAPON", weapon = "MACE2", stat = "CASTER" },
-    [42947] = { name = "Attacke des w\195\188rdevollen Direktors", loc = "INVTYPE_2HWEAPON", weapon = "STAFF", stat = "CASTER" },
-    [44095] = { name = "Gro\195\159stab des Jordan", loc = "INVTYPE_2HWEAPON", weapon = "STAFF", stat = "CASTER" },
+    [42943] = { en = "Bloodied Arcanite Reaper", loc = "INVTYPE_2HWEAPON", weapon = "AXE2", stat = "MELEE_STR" },
+    [44092] = { en = "Reforged Truesilver Champion", loc = "INVTYPE_2HWEAPON", weapon = "SWORD2", stat = "MELEE_STR" },
+    [48718] = { en = "Repurposed Lava Dredger", loc = "INVTYPE_2HWEAPON", weapon = "MACE2", stat = "CASTER" },
+    [42947] = { en = "Dignified Headmaster's Charge", loc = "INVTYPE_2HWEAPON", weapon = "STAFF", stat = "CASTER" },
+    [44095] = { en = "Grand Staff of Jordan", loc = "INVTYPE_2HWEAPON", weapon = "STAFF", stat = "CASTER" },
 
     ------------------------------------------------------------------- DISTANZ
-    [42946] = { name = "Verzauberter antiker Knochenbogen", loc = "INVTYPE_RANGED", weapon = "BOW", stat = "MELEE_AGI" },
-    [44093] = { name = "Aufger\195\188stete zwergische Handkanone", loc = "INVTYPE_RANGEDRIGHT", weapon = "GUN", stat = "MELEE_AGI" },
+    [42946] = { en = "Charmed Ancient Bone Bow", loc = "INVTYPE_RANGED", weapon = "BOW", stat = "MELEE_AGI" },
+    [44093] = { en = "Upgraded Dwarven Hand Cannon", loc = "INVTYPE_RANGEDRIGHT", weapon = "GUN", stat = "MELEE_AGI" },
+
     ---------------------------------------------------------------- SONSTIGES
-    -- Nicht Teil der geprueften Erbstueckliste: der Ring stammt vom
-    -- Dunkelmond-Jahrmarkt, die Taschen sind ueberhaupt keine Erbstuecke.
-    -- Beide waren im urspruenglichen EasyGear enthalten und bleiben
-    -- deshalb drin. Meldet "/egup verify" sie als fehlend, hier loeschen.
-    [50255] = { name = "Ring des Schreckenspiraten", loc = "INVTYPE_FINGER", stat = "ANY", unverified = true },
-    [51809] = { name = "Tragbares Loch", loc = "", bag = true, unverified = true },
+    -- Nicht Teil der geprueften Erbstueckliste: der Ring ist ein Zusatz-Item
+    -- (nicht jeder Server fuehrt ihn), die Taschen sind ueberhaupt keine
+    -- Erbstuecke. Beide waren im urspruenglichen EasyGear enthalten und
+    -- bleiben deshalb drin. Meldet "/egup verify" sie als fehlend, hier
+    -- loeschen.
+    [50255] = { en = "Dread Pirate Ring", loc = "INVTYPE_FINGER", stat = "ANY", unverified = true },
+    [51809] = { en = "Portable Hole", loc = "", bag = true, unverified = true },
 }
 
 ------------------------------------------------------------------------------
@@ -117,9 +124,14 @@ EG.HEIRLOOM_UNIVERSAL = {
 -- Klassenpakete
 --
 -- Aufgenommen wird ein Stueck, wenn die Klasse es fuehren kann UND es fuer
--- mindestens eine ihrer Spezialisierungen taugt. Anlegbar allein reicht
--- nicht: ein Beweglichkeitsdolch geht an einen Priester, nuetzt ihm aber
--- nichts.
+-- mindestens eines ihrer Profile taugt (Hauptattribut mit Gewicht >= 0.3 in
+-- einem Klassenprofil). Anlegbar allein reicht nicht: ein Beweglichkeitsdolch
+-- geht an einen Priester, nuetzt ihm aber nichts.
+--
+-- /egup verify prueft genau diese Regel fuer jedes Paket und meldet
+--   * unbrauchbare Stuecke   (Klasse kann sie nicht tragen)
+--   * ueberfluessige Stuecke (tragbar, aber ohne passendes Attribut)
+--   * fehlende Stuecke       (tragbar und passend, aber nicht im Paket)
 ------------------------------------------------------------------------------
 
 EG.HEIRLOOM_PACKAGES = {
@@ -150,13 +162,14 @@ EG.HEIRLOOM_PACKAGES = {
         { id = 48716 }, { id = 42945 }, { id = 44096 },
     },
 
+    -- Jaeger: Staerke bringt nur Nahkampf-Angriffskraft und nuetzt einem
+    -- Fernkaempfer nicht - Staerkewaffen (Zweihaender, 44096) fehlen deshalb.
     HUNTER = {
         { id = 42991, count = 2 },
         { id = 48677 }, { id = 42950 }, { id = 44101 },      -- Kette Beweglichkeit
         { id = 42946 }, { id = 44093 },                      -- Bogen und Gewehr
         { id = 42944 }, { id = 44091 },                      -- Dolche
-        { id = 42945 }, { id = 44096 },                      -- Einhandschwerter
-        { id = 42943 }, { id = 44092 },                      -- Zweihand
+        { id = 42945 },                                      -- Einhandschwert
     },
 
     SHAMAN = {
@@ -221,4 +234,5 @@ EG.HEIRLOOM_PACKAGES = {
 --   Schamane                      keine Schwerter - deshalb kein 44092
 --                                 und kein 42945/44096.
 --   Krieger/Todesritter           48718 traegt Intelligenz.
+--   Jaeger                        Staerkewaffen (42943, 44092, 44096).
 ------------------------------------------------------------------------------

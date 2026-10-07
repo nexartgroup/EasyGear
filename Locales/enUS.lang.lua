@@ -1,0 +1,387 @@
+-- EasyGear language file: English (enUS) - the complete reference.
+--
+-- Naming: <locale>.lang.lua, one file per client language (enUS, deDE, ...).
+-- ".lang" marks it as a language file; the trailing ".lua" is needed because
+-- the WoW client only reliably loads .lua and .xml files from the .toc.
+--
+-- Format: plain Lua. Each file registers one table under the locale code that
+-- GetLocale() returns:
+--
+--     EasyGearLocales = EasyGearLocales or {}
+--     EasyGearLocales["deDE"] = { KEY = "text", ... }
+--
+-- Missing keys fall back to this file key by key, so a translation may be
+-- partial; an unsupported client language uses English throughout. enGB uses
+-- this file, esMX uses esES.
+--
+-- Placeholders (%s, %d) must stay in the same order and number as here.
+-- Keys starting with SUBTYPE_ hold the client's names for armor and weapon
+-- subtypes ("a|b" = several spellings). They are needed for the basic
+-- function "can my class use this item" and are only a fallback behind the
+-- client's own auction house category lists. SPEC_<id> / SPEC_<id>_D are
+-- profile names and descriptions.
+-- Save as UTF-8 without BOM. Check with:  python3 tests/run_tests.py
+
+EasyGearLocales = EasyGearLocales or {}
+--     EasyGearLocales["deDE"] = { KEY = "text", ... }
+--
+-- Missing keys fall back to this file key by key, so a translation may be
+-- partial. enGB uses this file, esMX uses esES.
+--
+-- Placeholders (%s, %d) must stay in the same order and number as here.
+-- Keys starting with SUBTYPE_ hold the client's names for armor and weapon
+-- subtypes ("a|b" = several spellings). They are needed for the basic
+-- function "can my class use this item" and are only a fallback behind the
+-- client's own auction house category lists. SPEC_<id> / SPEC_<id>_D are
+-- profile names and descriptions.
+-- Save as UTF-8 without BOM.
+
+EasyGearLocales = EasyGearLocales or {}
+
+EasyGearLocales["enUS"] = {
+
+    ---------------------------------------------------------------- general
+    LOADED            = "EasyGear %s loaded.",
+    CMD_HEADER        = "Commands:",
+    INVALID_ITEM      = "Could not read item information. Please supply a valid item link.",
+    ITEM_LOADING      = "Item data is not cached yet - please try again in a moment.",
+    UPGRADES_HEAD     = "Upgrades in your bags (best first)",
+    UPGRADES_NONE     = "No upgrades in your bags.",
+    LOCALE_BROKEN     = "Language files were not loaded - check the Locales\\*.lang.lua lines in EasyGear.toc.",
+
+    --------------------------------------------------------------- scoring
+    TITLE             = "EasyGear - Item comparison",
+    CANDIDATE         = "Item to compare",
+    EQUIPPED          = "Currently equipped",
+    NOTHING_EQUIPPED  = "Slot is empty",
+    DROP_HINT         = "Drag an item here\nor shift-click it",
+    SCORE             = "Score",
+    ILVL              = "Item level",
+    SLOT              = "Slot",
+    TYPE              = "Type",
+    SUBTYPE           = "Subtype",
+    REQLEVEL          = "Required level",
+    SELLPRICE         = "Vendor price",
+    STAT              = "Attribute",
+    VALUE             = "Value",
+    WEIGHT            = "Weight",
+    POINTS            = "Points",
+    TOTAL             = "Total",
+    BASE_ILVL         = "Item level base",
+    WEAPON_DPS        = "Weapon DPS",
+    RANGED_DPS        = "Ranged DPS",
+    SOCKETS           = "Empty sockets",
+    HEIRLOOM_BONUS    = "Heirloom bonus",
+    DIFFERENCE        = "Difference",
+    UPGRADE           = "UPGRADE",
+    NO_UPGRADE        = "NO UPGRADE",
+    NOT_USABLE        = "NOT USABLE",
+    PROFILE           = "Profile",
+    HEIRLOOM          = "Heirloom",
+    ENCHANTED         = "enchanted",
+    GEMMED            = "%d gem(s)",
+    ROLE_AUTO         = "Automatic",
+    QUEST_PICK        = "EasyGear recommendation",
+
+    ---------------------------------------------------------------- reasons
+    R_HEIRLOOM_WINS   = "A heirloom replaces a normal item - it scales with your level and grants bonus experience.",
+    R_HEIRLOOM_KEEP   = "The equipped heirloom is preferred while levelling - the item would have to be clearly better.",
+    R_LOWER           = "The equipped item has a higher score.",
+    R_EQUAL           = "Same score as the equipped item.",
+    R_CLASS           = "Not usable by your class or armor proficiency.",
+    R_LEVEL           = "You need level %d for this item.",
+    R_EMPTY           = "The slot is empty - anything is an improvement.",
+    R_MINDELTA        = "The advantage of %s points is within noise - not counted as an upgrade.",
+    R_NOCOMPARE       = "Cosmetic item or tool - not compared.",
+    NOTE_2H           = "A two-handed weapon replaces main hand and off hand.",
+    NOTE_2H_TG        = "Titan's Grip: a two-handed weapon replaces one of the two hands.",
+    NOTE_OFFHAND      = "A two-handed weapon is equipped and would have to be removed - compared against main hand plus off hand.",
+    NOTE_MH_2H        = "Would replace the equipped two-handed weapon.",
+    NOTE_UNIQUE       = "Unique item - the second copy replaces the first.",
+    NOTE_HEIRLOOM_PREF= "Heirloom preference while levelling: score x%s.",
+    NOTE_HEIRLOOM_EST = "Heirloom values are read from the tooltip and are approximate.",
+    NOTE_EXTRAS       = "The equipped item carries %s points from enchants and gems.",
+
+    -------------------------------------------------------------- item window
+    BTN_CLEAR         = "Clear",
+    BTN_CHAT          = "Print to chat",
+    BTN_CLOSE         = "Close",
+    GUI_SLOT1         = "Slot 1",
+    GUI_SLOT2         = "Slot 2",
+    GUI_COMPARED      = "compared against",
+
+    ------------------------------------------------------------ profile window
+    P_TITLE           = "EasyGear - Profiles",
+    P_CANDIDATE       = "Comparison profile",
+    P_ACTIVEPROF      = "Active profile",
+    P_CLASS           = "Class",
+    P_MYCLASS         = "My class",
+    P_GEAR            = "Your equipped gear",
+    P_GEAR_SCORE      = "Gear score",
+    P_ITEM_LINE       = "Item from the comparison window",
+    P_SAVE_NEW        = "Save as new profile",
+    P_OVERWRITE       = "Save",
+    P_ACTIVATE        = "Activate A",
+    P_EDIT            = "Edit",
+    P_DELETE          = "Delete",
+    P_PVP             = "PvP mode (resilience and stamina)",
+    P_NEW_PROMPT      = "Name for the new profile:",
+    P_ONLY_CUSTOM     = "Only your own profiles can be edited - save as a new profile first.",
+    P_IS_ACTIVE       = "This is already the active profile.",
+    P_EDIT_HINT       = "Edit mode: change the weights on the left, then save.",
+    P_BETTER          = "Your gear collects more points under this weighting.",
+    P_WORSE           = "Your gear collects fewer points under this weighting.",
+    P_SAME            = "Same score under both weightings.",
+    P_CAVEAT          = "Totals of different profiles are only roughly comparable - what matters is which attributes carry the points.",
+    P_NOGEAR          = "No gear equipped.",
+    P_ITEMS           = "%d items",
+
+    ------------------------------------------------------- settings and status
+    SET_PROFILE       = "Active profile: %s",
+    SET_PVP           = "PvP mode: %s",
+    PROFILE_LIST      = "Available profiles",
+    PROFILE_AUTO_HINT = "detect from talents, level and weapons",
+    PROFILE_CMD_HINT  = "* = own profile   |   /eg profile <id>   |   /egprofile for the window",
+    PROFILE_UNKNOWN   = "Unknown profile: %s",
+    SET_ILVL          = "Item level weight: %s",
+    SET_ON            = "enabled",
+    SET_OFF           = "disabled",
+    SET_RESET         = "Settings reset to defaults (your own profiles are kept).",
+    SET_SCALE         = "Window scale: %s",
+    SET_MINDELTA      = "Minimum difference: %s points (+ %s%% relative)",
+    SET_ILVLSCALE     = "Item level base scales with character level: %s (currently x%s)",
+    ST_AUTOLEVEL      = "Leveling profile below level 80",
+    ST_ENCHANTS       = "Enchants and gems",
+    ST_ITEMS          = "Vendor/loot/AH",
+    ST_DIFF           = "Stat differences",
+    ST_NOW            = "now",
+
+    --------------------------------------------------------------- integrations
+    HOOK_ELVUI        = "ElvUI bag support enabled.",
+    HOOK_BAGNON       = "Bagnon bag support enabled.",
+    HOOK_IMMERSION    = "Immersion quest support enabled.",
+
+    ---------------------------------------------------------------------- EGUP
+    EGUP_NO_DATA      = "EasyGearHeirlooms.lua is not loaded.",
+    EGUP_NO_TARGET    = "Target a player first (or use /egup self).",
+    EGUP_NOT_PLAYER   = "The target is not a player.",
+    EGUP_NO_CLASS     = "Could not determine the target's class.",
+    EGUP_NO_PACKAGE   = "No package configured for %s.",
+    EGUP_CONFIRM      = "Send the %s package (%d entries) to %s?",
+    EGUP_RUNNING      = "Sending package to %s ...",
+    EGUP_CLASS_LINE   = "Class: %s - entries: %s",
+    EGUP_DONE         = "EGUP completed.",
+    EGUP_HINT         = "After equipping the desired items use /egupclean.",
+    EGUP_PACKAGE_HEAD = "Package",
+    EGUP_VERIFY_HEAD  = "Heirloom check",
+    EGUP_VERIFY_MISSING = "not in the client cache",
+    EGUP_VERIFY_QUALITY = "quality %s, expected heirloom",
+    EGUP_VERIFY_SLOT  = "slot %s, expected %s",
+    EGUP_VERIFY_STAT  = "primary attribute %s, expected %s",
+    EGUP_VERIFY_SUM   = "OK / suspicious / missing:",
+    EGUP_VERIFY_HINT  = "Missing entries are usually uncached - open the item once, or the ID differs on this server. Correct it in EasyGearHeirlooms.lua.",
+    EGUP_AUDIT_HEAD   = "Class packages",
+    EGUP_AUDIT_UNUSABLE = "cannot be used by this class:",
+    EGUP_AUDIT_USELESS  = "usable, but no matching main attribute:",
+    EGUP_AUDIT_MISSING  = "usable and fitting, but not in the package:",
+    EGUP_AUDIT_CLEAN  = "All class packages are consistent.",
+    EGUP_CLEAN_START  = "Removing unequipped package items from your bags ...",
+    EGUP_CLEAN_BUSY   = "Cleanup is already running.",
+    EGUP_CLEAN_NONE   = "Nothing to clean.",
+    EGUP_CLEAN_LIST_HEAD = "Would be removed:",
+    EGUP_CLEAN_CONFIRM= "Delete %d item(s) in %d stack(s) of the EGUP package from your bags? Equipped items are kept.",
+    EGUP_CLEAN_DONE   = "EGUPCLEAN completed - %d item(s) removed.",
+    EGUP_CLEAN_LEFT   = "%d stack(s) could not be removed - run /egupclean again.",
+
+    --------------------------------------------------------------- /eg locale
+    LOCALE_HEAD       = "Language",
+    LOCALE_CLIENT     = "Client language",
+    LOCALE_FILE       = "language file",
+    LOCALE_FALLBACK   = "no translation - English is used",
+    LOCALE_LOADED     = "Loaded language files",
+    LOCALE_SUBTYPES   = "Armor/weapon subtypes recognised",
+    LOCALE_FROM_CLIENT= "from the client",
+    LOCALE_FROM_LANG  = "from the language file",
+    LOCALE_MISMATCH   = "%d item(s) had a subtype that did not match its slot and were ignored.",
+
+    -------------------------------------------------------------------- help
+    H_EG              = "open the comparison window",
+    H_EG_LINK         = "evaluate an item in chat (link or item ID)",
+    H_UPGRADES        = "list all upgrades in your bags",
+    H_GUI             = "open the comparison window",
+    H_PROFILE_WIN     = "profile overview, comparison and editor",
+    H_PROFILE_LIST    = "list all profiles",
+    H_PROFILE_SET     = "activate a profile (auto = detect)",
+    H_AUTOLEVEL       = "below level 80 use the Leveling profile of your class",
+    H_PVP             = "toggle PvP mode",
+    H_ROLE            = "pick the first profile of your class with that role",
+    H_HEIRLOOM        = "prefer heirlooms while levelling",
+    H_HEIRLOOMBONUS   = "score bonus for heirlooms (default 1.5)",
+    H_ENCHANTS        = "count enchants and gems",
+    H_SOCKET          = "points per empty socket (auto = from level and profile)",
+    H_ILVL            = "item level weight (at level 80)",
+    H_ILVLSCALE       = "scale the item level term with character level",
+    H_MINDELTA        = "absolute minimum gain to call something an upgrade",
+    H_MINDELTAPCT     = "relative minimum gain (default 1 %)",
+    H_TOGGLES         = "toggle bag / quest / vendor-loot-AH markers, tooltip lines, stat differences",
+    H_SCALE           = "window scale",
+    H_STATUS          = "current settings",
+    H_LOCALE          = "language files and subtype recognition",
+    H_RESET           = "back to defaults",
+    H_EGUP            = "GM: send the class package to your target",
+    H_EGUP_SELF       = "GM: send the package of your own class to yourself",
+    H_EGUP_LIST       = "show a package / verify IDs and packages",
+    H_EGUPCLEAN       = "remove all unequipped package items from the bags",
+
+    ------------------------------------------- armor and weapon subtype names
+    SUBTYPE_CLOTH     = "Cloth",
+    SUBTYPE_LEATHER   = "Leather",
+    SUBTYPE_MAIL      = "Mail",
+    SUBTYPE_PLATE     = "Plate",
+    SUBTYPE_SHIELD    = "Shields|Shield",
+    SUBTYPE_LIBRAM    = "Librams|Libram",
+    SUBTYPE_IDOL      = "Idols|Idol",
+    SUBTYPE_TOTEM     = "Totems|Totem",
+    SUBTYPE_SIGIL     = "Sigils|Sigil",
+    SUBTYPE_MISC      = "Miscellaneous",
+    SUBTYPE_AXE1      = "One-Handed Axes",
+    SUBTYPE_AXE2      = "Two-Handed Axes",
+    SUBTYPE_MACE1     = "One-Handed Maces",
+    SUBTYPE_MACE2     = "Two-Handed Maces",
+    SUBTYPE_SWORD1    = "One-Handed Swords",
+    SUBTYPE_SWORD2    = "Two-Handed Swords",
+    SUBTYPE_DAGGER    = "Daggers",
+    SUBTYPE_FIST      = "Fist Weapons",
+    SUBTYPE_POLEARM   = "Polearms",
+    SUBTYPE_STAFF     = "Staves",
+    SUBTYPE_BOW       = "Bows",
+    SUBTYPE_GUN       = "Guns",
+    SUBTYPE_CROSSBOW  = "Crossbows",
+    SUBTYPE_WAND      = "Wands",
+    SUBTYPE_THROWN    = "Thrown",
+    SUBTYPE_FISHING   = "Fishing Poles",
+
+    --------------------------------------------------------- profile names
+    SPEC_LEVELING     = "Leveling (neutral)",
+    SPEC_LEVELING_D   = "Balanced for levels 1-79, independent of class.",
+    SPEC_ILVL_ONLY    = "Item level only",
+    SPEC_ILVL_ONLY_D  = "Ignores all attributes - pure item level comparison.",
+
+    SPEC_WARRIOR_ARMS     = "Arms (two-hand)",
+    SPEC_WARRIOR_ARMS_D   = "Two-hander: weapon damage, armor penetration and hit matter most.",
+    SPEC_WARRIOR_FURY     = "Fury (dual wield)",
+    SPEC_WARRIOR_FURY_D   = "Dual wield or Titan's Grip - noticeably higher hit and expertise requirement.",
+    SPEC_WARRIOR_PROT     = "Protection (tank)",
+    SPEC_WARRIOR_PROT_D   = "Defense rating to uncrittable, then avoidance and block.",
+    SPEC_WARRIOR_LEVELING = "Leveling",
+    SPEC_WARRIOR_LEVELING_D = "Levels 1-79: strength, stamina, armor and weapon damage; ratings barely count.",
+    SPEC_WARRIOR_ALLROUND = "All-round",
+    SPEC_WARRIOR_ALLROUND_D = "Balanced across Arms, Fury and Protection - for hybrid gear and a second spec.",
+
+    SPEC_PALADIN_HOLY     = "Holy (healer)",
+    SPEC_PALADIN_HOLY_D   = "Spell power and intellect, then crit and haste; spirit hardly matters.",
+    SPEC_PALADIN_PROT     = "Protection (tank)",
+    SPEC_PALADIN_PROT_D   = "Block value counts far more than for other tanks.",
+    SPEC_PALADIN_RET      = "Retribution (melee)",
+    SPEC_PALADIN_RET_D    = "Strength, hit and expertise; some spell power through scaling.",
+    SPEC_PALADIN_LEVELING = "Leveling",
+    SPEC_PALADIN_LEVELING_D = "Levels 1-79: strength, stamina, armor and weapon damage with a little mana.",
+    SPEC_PALADIN_ALLROUND = "All-round",
+    SPEC_PALADIN_ALLROUND_D = "Covers Holy, Protection and Retribution - for hybrid gear and a second spec.",
+
+    SPEC_HUNTER_BM        = "Beast Mastery",
+    SPEC_HUNTER_BM_D      = "Attack power also scales through the pet; ranged weapon damage counts.",
+    SPEC_HUNTER_MM        = "Marksmanship",
+    SPEC_HUNTER_MM_D      = "Crit rating and armor penetration lead; ranged weapon damage counts most.",
+    SPEC_HUNTER_SV        = "Survival",
+    SPEC_HUNTER_SV_D      = "High hit requirement, haste over armor penetration.",
+    SPEC_HUNTER_LEVELING  = "Leveling",
+    SPEC_HUNTER_LEVELING_D = "Agility, stamina, armor and above all the ranged weapon; the melee weapon is a stat stick.",
+    SPEC_HUNTER_ALLROUND  = "All-round",
+    SPEC_HUNTER_ALLROUND_D = "Balanced across all three trees.",
+
+    SPEC_ROGUE_ASSA       = "Assassination (daggers)",
+    SPEC_ROGUE_ASSA_D     = "Daggers, very high hit requirement from Mutilate.",
+    SPEC_ROGUE_COMBAT     = "Combat (swords)",
+    SPEC_ROGUE_COMBAT_D   = "Armor penetration is the strongest secondary here.",
+    SPEC_ROGUE_SUB        = "Subtlety",
+    SPEC_ROGUE_SUB_D      = "Balanced between crit rating and weapon damage.",
+    SPEC_ROGUE_LEVELING   = "Leveling",
+    SPEC_ROGUE_LEVELING_D = "Levels 1-79: agility, stamina, armor and weapon damage; ratings barely count.",
+    SPEC_ROGUE_ALLROUND   = "All-round",
+    SPEC_ROGUE_ALLROUND_D = "Balanced across all three trees.",
+
+    SPEC_PRIEST_DISC      = "Discipline (healer)",
+    SPEC_PRIEST_DISC_D    = "Shields scale with spell power and crit; spirit matters less.",
+    SPEC_PRIEST_HOLY      = "Holy (healer)",
+    SPEC_PRIEST_HOLY_D    = "Spirit and haste, high mana throughput.",
+    SPEC_PRIEST_SHADOW    = "Shadow (caster DPS)",
+    SPEC_PRIEST_SHADOW_D  = "Hit to cap, then haste and spell power; some spirit for mana.",
+    SPEC_PRIEST_LEVELING  = "Leveling",
+    SPEC_PRIEST_LEVELING_D = "Spell power, intellect and spirit for mana; the wand is your fallback.",
+    SPEC_PRIEST_ALLROUND  = "All-round",
+    SPEC_PRIEST_ALLROUND_D = "Covers healing and shadow - for hybrid gear and a second spec.",
+
+    SPEC_DK_BLOOD_TANK    = "Blood (tank)",
+    SPEC_DK_BLOOD_TANK_D  = "The usual tanking choice in 3.3.5a.",
+    SPEC_DK_BLOOD_DPS     = "Blood (two-hand DPS)",
+    SPEC_DK_BLOOD_DPS_D   = "Two-hander, strength and armor penetration.",
+    SPEC_DK_FROST_DW      = "Frost (dual wield)",
+    SPEC_DK_FROST_DW_D    = "Dual wield - the highest hit requirement of all melee profiles.",
+    SPEC_DK_FROST_2H      = "Frost (two-hand)",
+    SPEC_DK_FROST_2H_D    = "Two-hand variant with a much lower hit requirement.",
+    SPEC_DK_UNHOLY        = "Unholy (two-hand DPS)",
+    SPEC_DK_UNHOLY_D      = "Haste is more valuable here than in the other trees.",
+    SPEC_DK_FROST_TANK    = "Frost (tank)",
+    SPEC_DK_FROST_TANK_D  = "Alternative tank build, leaning more on parry.",
+    SPEC_DK_LEVELING      = "Leveling",
+    SPEC_DK_LEVELING_D    = "Levels 1-79: strength, stamina, armor and weapon damage; ratings barely count.",
+    SPEC_DK_ALLROUND      = "All-round",
+    SPEC_DK_ALLROUND_D    = "Covers tanking and both melee builds - for hybrid gear and a second spec.",
+
+    SPEC_SHAMAN_ELE       = "Elemental (caster DPS)",
+    SPEC_SHAMAN_ELE_D     = "Spell hit to cap, then haste and crit.",
+    SPEC_SHAMAN_ENH       = "Enhancement (melee)",
+    SPEC_SHAMAN_ENH_D     = "Needs both melee and spell hit rating.",
+    SPEC_SHAMAN_RESTO     = "Restoration (healer)",
+    SPEC_SHAMAN_RESTO_D   = "Haste is the strongest secondary.",
+    SPEC_SHAMAN_LEVELING  = "Leveling",
+    SPEC_SHAMAN_LEVELING_D = "Melee weights by default; with most talents in Elemental the caster weights apply.",
+    SPEC_SHAMAN_ALLROUND  = "All-round",
+    SPEC_SHAMAN_ALLROUND_D = "Covers melee, caster and healing - for hybrid gear and a second spec.",
+
+    SPEC_MAGE_ARCANE      = "Arcane",
+    SPEC_MAGE_ARCANE_D    = "Intellect counts more here than in the other trees.",
+    SPEC_MAGE_FIRE        = "Fire",
+    SPEC_MAGE_FIRE_D      = "Crit rating leads.",
+    SPEC_MAGE_FROST       = "Frost",
+    SPEC_MAGE_FROST_D     = "Balanced between crit rating and haste.",
+    SPEC_MAGE_LEVELING    = "Leveling",
+    SPEC_MAGE_LEVELING_D  = "Spell power, intellect and spirit; the wand is your fallback.",
+    SPEC_MAGE_ALLROUND    = "All-round",
+    SPEC_MAGE_ALLROUND_D  = "Balanced across all three trees.",
+
+    SPEC_WARLOCK_AFFLI    = "Affliction",
+    SPEC_WARLOCK_AFFLI_D  = "Haste shortens the curse and DoT rotation noticeably.",
+    SPEC_WARLOCK_DEMO     = "Demonology",
+    SPEC_WARLOCK_DEMO_D   = "Balanced, also scales through the demon.",
+    SPEC_WARLOCK_DESTRO   = "Destruction",
+    SPEC_WARLOCK_DESTRO_D = "Crit rating leads.",
+    SPEC_WARLOCK_LEVELING = "Leveling",
+    SPEC_WARLOCK_LEVELING_D = "Spell power and stamina (Life Tap), intellect and spirit; the wand is your fallback.",
+    SPEC_WARLOCK_ALLROUND = "All-round",
+    SPEC_WARLOCK_ALLROUND_D = "Balanced across all three trees.",
+
+    SPEC_DRUID_BALANCE    = "Balance (moonkin)",
+    SPEC_DRUID_BALANCE_D  = "Hit, haste and spell power; spirit counts through talents.",
+    SPEC_DRUID_CAT        = "Feral - cat (DPS)",
+    SPEC_DRUID_CAT_D      = "Armor penetration is especially strong here.",
+    SPEC_DRUID_BEAR       = "Feral - bear (tank)",
+    SPEC_DRUID_BEAR_D     = "Armor counts more than for any other tank; no block stats.",
+    SPEC_DRUID_RESTO      = "Restoration (healer)",
+    SPEC_DRUID_RESTO_D    = "Haste and spirit for HoT throughput.",
+    SPEC_DRUID_LEVELING   = "Leveling",
+    SPEC_DRUID_LEVELING_D = "Feral weights by default (cat and bear); with most talents in Balance the caster weights apply.",
+    SPEC_DRUID_ALLROUND   = "All-round",
+    SPEC_DRUID_ALLROUND_D = "Covers feral, balance and healing - for hybrid gear and a second spec.",
+}

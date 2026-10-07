@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 2.6.0 - Profilvergleich  (/egprofile)
+    EasyGear 3.0.0 - Profilvergleich  (/egprofile)
 
     Aufbau wie der Item-Vergleich:
 
@@ -411,6 +411,7 @@ function PGUI:AllKeys()
     local keys = {}
     for _, k in ipairs(EG.STAT_ORDER) do keys[#keys + 1] = k end
     keys[#keys + 1] = EG.PSEUDO_DPS
+    keys[#keys + 1] = EG.PSEUDO_RDPS
     return keys
 end
 
@@ -478,7 +479,7 @@ end
 StaticPopupDialogs["EASYGEAR_PROFILE_NEW"] = {
     text = "%s",
     button1 = ACCEPT or "OK",
-    button2 = CANCEL or "Abbrechen",
+    button2 = CANCEL or "Cancel",
     hasEditBox = 1, maxLetters = 32,
     OnShow = function(self)
         local eb = self.editBox or _G[self:GetName() .. "EditBox"]
@@ -504,8 +505,8 @@ StaticPopupDialogs["EASYGEAR_PROFILE_NEW"] = {
 
 StaticPopupDialogs["EASYGEAR_PROFILE_DELETE"] = {
     text = "%s",
-    button1 = YES or "Ja",
-    button2 = NO or "Nein",
+    button1 = YES or "Yes",
+    button2 = NO or "No",
     OnAccept = function(self)
         local id = self.data
         if id then
@@ -561,20 +562,26 @@ function PGUI:BuildRows(totals, wA, wB, showAll)
     local keys = {}
     for _, k in ipairs(EG.STAT_ORDER) do keys[#keys + 1] = k end
     keys[#keys + 1] = EG.PSEUDO_DPS
+    keys[#keys + 1] = EG.PSEUDO_RDPS
     keys[#keys + 1] = EG.PSEUDO_SOCKET
 
     for _, key in ipairs(keys) do
         local a = (wA and wA[key]) or 0
         local b = (wB and wB[key]) or 0
-        if key == EG.PSEUDO_SOCKET then
-            a = tonumber(EG.db and EG.db.socketValue) or 0
-            b = a
+        if key == EG.PSEUDO_DPS then
+            a, b = EG:GetHandWeight(wA, "MELEE"), EG:GetHandWeight(wB, "MELEE")
+        elseif key == EG.PSEUDO_RDPS then
+            a, b = EG:GetHandWeight(wA, "RANGED"), EG:GetHandWeight(wB, "RANGED")
+        elseif key == EG.PSEUDO_SOCKET then
+            a, b = EG:GetSocketPoints(wA), EG:GetSocketPoints(wB)
             if (totals.__SOCKET or 0) == 0 then a, b = 0, 0 end
         end
         if showAll or a ~= 0 or b ~= 0 then
             local v
             if key == EG.PSEUDO_DPS then
                 v = totals.__DPS or 0
+            elseif key == EG.PSEUDO_RDPS then
+                v = totals.__RDPS or 0
             elseif key == EG.PSEUDO_SOCKET then
                 v = totals.__SOCKET or 0
             else
