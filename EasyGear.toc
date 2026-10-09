@@ -6,7 +6,7 @@
 ## Notes-esES: Evaluacion de equipo, deteccion de mejoras y comparacion de objetos para WotLK 3.3.5a
 ## Notes-esMX: Evaluacion de equipo, deteccion de mejoras y comparacion de objetos para WotLK 3.3.5a
 ## Author: nexartgroup
-## Version: 3.0.0
+## Version: 3.1.0
 ## SavedVariables: EasyGearDB
 ## SavedVariablesPerCharacter: EasyGearCharDB
 ## OptionalDeps: ElvUI, Bagnon, Immersion
@@ -27,7 +27,9 @@ Locales\zhTW.lang.lua
 EasyGear.lua
 EasyGearSpecs.lua
 EasyGearHeirlooms.lua
+EasyGearMarks.lua
 EasyGearOverlays.lua
 EasyGearEGUP.lua
 EasyGearGUI.lua
 EasyGearProfileGUI.lua
+EasyGearOptions.lua

@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 3.0.0
+    EasyGear 3.1.0
     Gear-Bewertung, Upgrade-Erkennung und Vergleich fuer WoW 3.3.5a (WotLK)
 
     Kompatibilitaet:
@@ -40,7 +40,7 @@
 ------------------------------------------------------------------------------
 
 local ADDON_NAME    = "EasyGear"
-local ADDON_VERSION = "3.0.0"
+local ADDON_VERSION = "3.1.0"
 
 EasyGear = EasyGear or {}
 local EG = EasyGear
@@ -64,9 +64,11 @@ local OFFHAND_FACTOR    = 0.5   -- Nebenhand-Waffen verursachen nur halben Schad
 -- Texturen
 local TEX_UPGRADE = "Interface\\Buttons\\UI-CheckBox-Check"
 local TEX_VENDOR  = "Interface\\MoneyFrame\\UI-GoldIcon"
+local TEX_RECIPE  = "Interface\\Icons\\INV_Misc_Book_09"
 
 EG.TEX_UPGRADE = TEX_UPGRADE
 EG.TEX_VENDOR  = TEX_VENDOR
+EG.TEX_RECIPE  = TEX_RECIPE
 
 -- Standardeinstellungen (SavedVariables)
 local DEFAULTS = {
@@ -77,6 +79,12 @@ local DEFAULTS = {
     showBagIcons     = true,
     showQuestIcons   = true,
     showItemIcons    = true,    -- Haendler, Beute, Wuerfeln, Auktionshaus, Handel, Post
+    showQuestNeedIcons = true,  -- Item wird fuer eine angenommene Quest gebraucht
+    showQuestItemIcons = true,  -- Quest-Item, Quest-Beginn, Legendaeres mit besonderem Nutzen
+    showRecipeIcons  = true,    -- erlernbare, noch nicht bekannte Rezepte markieren
+    showKnownRecipes = false,   -- bereits bekannte Rezepte markieren (verkaufbar)
+    showProspectIcons = true,   -- Erz, das der Charakter sondieren kann
+    showMillIcons    = true,    -- Kraut, das der Charakter mahlen kann
     showTooltip      = true,
     showTooltipStats = true,    -- Slot- und Vergleichszeile im Tooltip
     tooltipDiff      = true,    -- Attribut-Differenzen im Tooltip
@@ -368,6 +376,7 @@ EG.IsRedLine  = function(_, fs) return IsRed(fs) end
 EG.IsGreyLine = function(_, fs) return IsGrey(fs) end
 EG.SetScanTip = function(_, link) return SetScanTip(link) end
 EG.TipLine    = function(_, i) return TipLine(i) end
+EG.TemplateToPattern = function(_, tpl, capture) return TemplateToPattern(tpl, capture) end
 EG.ScanTipObj = scanTip
 EG.DpsPattern      = dpsPattern
 EG.MinLevelPattern = minLevelPattern
@@ -485,6 +494,7 @@ EG.profileCache = nil
 EG.epoch = 0
 EG.scoreCache = {}
 EG.stateCache = {}
+EG.factCache = {}
 
 --[[ Jede Aenderung an Profil, Ausruestung oder Einstellungen verwirft die
      berechneten Vergleiche und erhoeht die Epoche; daran erkennen die
@@ -2785,7 +2795,20 @@ local function AddTooltipInfo(tooltip, forcedLink)
     if not link then return end
 
     local item = EG:GetItemData(link)
-    if not item or not item.equipLoc or item.equipLoc == "" then return end
+    if not item then return end
+
+    -- Kein Ausruestungsgegenstand: hoechstens die Hinweise der Markierungen
+    -- (Quest, Rezept, Sondieren, Mahlen), siehe EasyGearMarks.lua.
+    if not item.equipLoc or item.equipLoc == "" then
+        local lines = EG.GetMarkTooltipLines and EG:GetMarkTooltipLines(link)
+        if lines then
+            tooltip.EGDone = true
+            tooltip:AddLine(" ")
+            for _, text in ipairs(lines) do tooltip:AddLine(text) end
+            tooltip:Show()
+        end
+        return
+    end
 
     local result = EG:Compare(link)
     if not result then return end
@@ -3085,6 +3108,7 @@ end
 ------------------------------------------------------------------------------
 
 local function OnOff(v) return v and L.SET_ON or L.SET_OFF end
+EG.OnOff = function(_, v) return OnOff(v) end
 
 -- Befehl, Beschreibungsschluessel. Die Befehle selbst sind in jeder Sprache gleich.
 local HELP = {
@@ -3107,6 +3131,8 @@ local HELP = {
     { "/eg mindelta <number>",                "H_MINDELTA" },
     { "/eg mindeltapct <percent>",            "H_MINDELTAPCT" },
     { "/eg icons | quest | items | tooltip | diff", "H_TOGGLES" },
+    { "/eg marks [name [on|off]]",            "H_MARKS" },
+    { "/eg options",                          "H_OPTIONS" },
     { "/eg scale <0.5-2.0>",                  "H_SCALE" },
     { "/eg status",                           "H_STATUS" },
     { "/eg locale",                           "H_LOCALE" },
@@ -3166,6 +3192,7 @@ function EG:PrintStatus()
         .. " | " .. L.ST_ITEMS .. ": " .. OnOff(self.db.showItemIcons)
         .. " | Tooltip: " .. OnOff(self.db.showTooltip)
         .. " | " .. L.ST_DIFF .. ": " .. OnOff(self.db.tooltipDiff))
+    if self.PrintMarkStatus then self:PrintMarkStatus() end
 end
 
 --[[ /eg upgrades: alle Verbesserungen in den Taschen (und der Bank, wenn offen),
@@ -3256,6 +3283,7 @@ local function Toggle(key)
     EG:InvalidateProfile()
     EG:RefreshAllBags()
     if EG.GUI then EG.GUI:Refresh() end
+    if EG.Options then EG.Options:Refresh() end
 end
 
 -- "on" / "off" / leer (= umschalten) -> neuer Wert
@@ -3265,6 +3293,7 @@ local function ParseSwitch(arg, current)
     if arg == "off" or arg == "0" or arg == "aus" then return false end
     return not current
 end
+EG.ParseSwitch = function(_, arg, current) return ParseSwitch(arg, current) end
 
 local function CopyDefaults(target, source)
     for k, v in pairs(source) do
@@ -3285,7 +3314,10 @@ local function ApplySettingChange(wipeItems)
     EG:RefreshAllBags()
     if EG.GUI then EG.GUI:Refresh() end
     if EG.ProfileGUI then EG.ProfileGUI:Refresh() end
+    if EG.Options then EG.Options:Refresh() end
 end
+
+EG.ApplySettingChange = ApplySettingChange
 
 SLASH_EASYGEAR1 = "/eg"
 SLASH_EASYGEAR2 = "/easygear"
@@ -3425,6 +3457,11 @@ SlashCmdList["EASYGEAR"] = function(msg)
         Toggle("showQuestIcons"); return
     elseif cmd == "items" then
         Toggle("showItemIcons"); return
+    elseif cmd == "options" or cmd == "config" or cmd == "settings" then
+        if EG.OpenOptions then EG:OpenOptions() end
+        return
+    elseif EG.HandleMarkCommand and EG:HandleMarkCommand(cmd, rest) then
+        return
     elseif cmd == "tooltip" then
         Toggle("showTooltip"); return
     elseif cmd == "diff" then
@@ -3522,6 +3559,10 @@ eventFrame:RegisterEvent("BAG_UPDATE")
 eventFrame:RegisterEvent("QUEST_COMPLETE")
 eventFrame:RegisterEvent("QUEST_DETAIL")
 eventFrame:RegisterEvent("QUEST_ITEM_UPDATE")
+-- Rezepte: ein neu gelerntes Rezept oder eine gestiegene Fertigkeit aendert, was
+-- "erlernbar" heisst. Nicht jeder 3.3.5a-Fork kennt alle Namen.
+pcall(eventFrame.RegisterEvent, eventFrame, "SKILL_LINES_CHANGED")
+pcall(eventFrame.RegisterEvent, eventFrame, "CHAT_MSG_SYSTEM")
 -- Talentwechsel (Doppelspezialisierung); nicht jeder 3.3.5a-Fork kennt alle Namen
 pcall(eventFrame.RegisterEvent, eventFrame, "PLAYER_TALENT_UPDATE")
 pcall(eventFrame.RegisterEvent, eventFrame, "ACTIVE_TALENT_GROUP_CHANGED")
@@ -3598,6 +3639,18 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 
     if event == "BAG_UPDATE" then
         EG:Debounce("bag", 0.3, function() EG:RefreshAllBags() end)
+        return
+    end
+
+    if event == "SKILL_LINES_CHANGED" or event == "CHAT_MSG_SYSTEM" then
+        if event == "CHAT_MSG_SYSTEM" then
+            -- Bei Systemmeldungen nur reagieren, wenn etwas gelernt wurde.
+            if not EG:IsLearnMessage(arg1) then return end
+            EG:InvalidateFacts()
+        elseif not EG:InvalidateBlockedRecipes() then
+            return      -- gestiegene Fertigkeit: nur gesperrte Rezepte aendern sich
+        end
+        EG:Debounce("recipeevt", 0.5, function() EG:RefreshAllBags() end)
         return
     end
 

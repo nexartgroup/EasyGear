@@ -33,6 +33,7 @@ vendors, loot windows, loot rolls, trade, auction house, mail and every item too
 - [Settings](#settings)
 - [Tests](#tests)
 - [Known limits](#known-limits)
+- [Changes in 3.1](#changes-in-31)
 - [Changes in 3.0](#changes-in-30)
 
 ---
@@ -50,10 +51,12 @@ World of Warcraft/
             ├── EasyGear.lua            core: scoring, slots, comparison, quest, tooltip
             ├── EasyGearSpecs.lua       56 stat weight profiles
             ├── EasyGearHeirlooms.lua   heirloom database and class packages
+            ├── EasyGearMarks.lua       markers: quest, recipes, prospecting, milling
             ├── EasyGearOverlays.lua    markers: bags, vendors, loot, rolls, trade, AH, mail
             ├── EasyGearEGUP.lua        GM package and cleanup
             ├── EasyGearGUI.lua         item comparison window
             ├── EasyGearProfileGUI.lua  profile comparison window
+            ├── EasyGearOptions.lua     settings page (Interface > AddOns)
             └── Locales/
                 ├── enUS.lang.lua       English - the complete reference
                 ├── deDE.lang.lua       Deutsch
@@ -85,6 +88,9 @@ The `tests/` folder is only for development and may be left out.
 | `/eg ilvl <number>` · `ilvlscale [on\|off]` | item level weight / scale it with character level |
 | `/eg mindelta <number>` · `mindeltapct <percent>` | minimum gain to call something an upgrade |
 | `/eg icons` · `quest` · `items` · `tooltip` · `diff` | toggle bag markers / quest markers / vendor-loot-AH markers / tooltip lines / stat differences |
+| `/eg marks` | list the item markers (quest, recipes, prospecting, milling) and whether they are on |
+| `/eg marks <name> [on\|off]` | switch one marker; the short forms `needed` · `questitem` · `recipes` · `prospect` · `mill` · `known` work without `marks` |
+| `/eg options` | settings page (also under *Interface → AddOns → EasyGear*) |
 | `/eg scale <0.5–2.0>` | window scale |
 | `/eg status` | current settings |
 | `/eg locale` | which language file is active, how armor/weapon types were recognised |
@@ -126,6 +132,55 @@ UPGRADE  +34  (+9.0%)
 
 On the character sheet and in compare-tooltips only the score is shown — comparing an item
 with itself is meaningless.
+
+### Item markers: quest, recipes, prospecting, milling
+
+Besides the check for gear upgrades, one more symbol can sit on an item icon. It shows what
+you can do with the item, or what you should **not** throw away. The symbols appear in the
+same places as the upgrade check (bags, bank, vendors, loot windows and rolls, trade, auction
+house, mail); the tooltip adds a matching line. An upgrade always wins; otherwise the first
+match in this list is shown:
+
+| Symbol | Meaning | Default |
+| :---: | --- | :---: |
+| yellow **?** | **needed for an active quest** — an item objective of a quest in your log; the tooltip names the quest and progress (`Needed for quest: Wolves (3/8)`) | on |
+| yellow **!** | **quest item with a special use** — a *Quest Item*, an item that *begins a quest* (possibly a longer chain) or a legendary item that is not equipment: keep it | on |
+| book | **recipe you can learn right now** | on |
+| gem | **ore you can prospect** (you know *Prospecting*, stack of 5 or more) | on |
+| inscription | **herb you can mill** (you know *Milling*, stack of 5 or more) | on |
+| coin | **recipe you already know** — a hint that it can be sold or otherwise used | **off** |
+
+Every symbol has its own switch: `/eg marks` lists them, `/eg marks <name> [on|off]` or the
+short forms (`/eg prospect off`, `/eg known on`, …) change them, and `/eg options` opens a
+settings page with one check box per symbol. The keys are `showQuestNeedIcons`,
+`showQuestItemIcons`, `showRecipeIcons`, `showProspectIcons`, `showMillIcons` and
+`showKnownRecipes`. All of them need the bag / vendor-loot markers (`/eg icons`, `/eg items`).
+
+How things are detected:
+
+* **Tooltip.** EasyGear reads what the client prints on the item: *Quest Item*, *This Item
+  Begins a Quest*, *Prospectable*, *Millable* and the red *Already known*. The texts come from
+  the client's own global strings, so this works in every client language. Only non-equippable
+  items are scanned; gear is judged by the upgrade comparison.
+* **Recipes.** A recipe is an item of class *Recipe* (language file key `RECIPE_TYPE`, English
+  as fallback) and is marked when the tooltip has **no red line** other than the level
+  requirement. Red means *Requires Alchemy (300)* (no profession or skill too low), *Already
+  known*, or a class/race/reputation restriction — so a known recipe, one for a profession you do
+  not have and one that needs more skill are never marked as learnable. The level requirement
+  is checked against your character level.
+* **Quest log.** The item objectives of your quests (`Wolf Pelt: 3/8`). The 3.3.5 API does not
+  list the quests of **collapsed zones** in the quest log; expand a zone and its quests are
+  seen. Rewards of a quest are not "needed" items and are never marked this way.
+* **Prospecting and milling** are abilities, so EasyGear looks them up in your spellbook (the
+  client-language name comes from the spell ID). Prospecting belongs to **Jewelcrafting**, not
+  to Mining, and Milling to **Inscription**. The *skill rank* an ore or herb needs (for
+  example 350 for Saronite) is not checked; a stack smaller than 5 is not marked in bags.
+
+Quest rewards get no symbol of their own (they carry the best-pick check); their tooltips do
+show these lines, for example *Recipe: you can learn this now*.
+
+After you learn a recipe or ability, a skill or your reputation goes up, a quest progresses or
+the quest log changes, the markers update on their own.
 
 Quest rewards are ranked by **gain**, not by absolute score, so a boot that fills an empty
 slot beats a cloak that merely replaces a slightly worse one. If no reward is an upgrade,
@@ -509,6 +564,9 @@ Stored in `EasyGearDB` (account-wide) and `EasyGearCharDB` (per character).
 | `protectHeirlooms` | `true` | prefer heirlooms while levelling |
 | `heirloomBonus` | `1.5` | heirloom score factor (up to level 60) |
 | `showBagIcons` · `showQuestIcons` · `showItemIcons` | `true` | markers: bags / quests / vendor-loot-roll-trade-AH-mail |
+| `showQuestNeedIcons` · `showQuestItemIcons` | `true` | mark items needed for an active quest / quest items, quest starters and non-gear legendaries |
+| `showRecipeIcons` · `showProspectIcons` · `showMillIcons` | `true` | mark learnable recipes / ore to prospect / herbs to mill |
+| `showKnownRecipes` | `false` | mark recipes you already know (they can be sold) |
 | `showTooltip` · `showTooltipStats` · `tooltipDiff` | `true` | tooltip lines / slot line / stat differences |
 | `iconSize` | `20` | marker size in pixels |
 | `egupCommand` · `egupConfirm` · `egupDelay` | see above | GM command template / confirmations / pause between commands |
@@ -553,6 +611,21 @@ documented for 3.3.5a, not the real client.
   attribute of each heirloom in the table is an assumption** that `/egup verify` cross-checks
   against the client — run it once on your server.
 * On heavily customised cores item IDs and the `.additem` syntax may differ.
+
+---
+
+## Changes in 3.1
+
+* **More item markers**, each with its own symbol and switch (see *Item markers*): needed for
+  an active quest, quest item / quest starter / legendary with a special use, learnable
+  recipe, ore to prospect, herb to mill and — off by default — recipe already known.
+* **Settings page** under *Interface → AddOns → EasyGear* (`/eg options`) with a check box for
+  every marker and tooltip line; `/eg marks` does the same in chat.
+* Tooltip scans are cached per item; the cache is cleared when you learn something, not on
+  every equipment change. Stack size is part of the bag marker, so 4 ore and 5 ore differ.
+* Language-file keys: `RECIPE_TYPE` and `QUEST_TYPE` (class names), `MARK_*` (tooltip lines),
+  `MK_*` (marker names), `OPT_*` (settings page), `SET_MARK`, `MARKS_*`, `H_MARKS`,
+  `H_OPTIONS` in all eight languages. `SET_RECIPES`, `ST_RECIPES` and `H_RECIPES` are gone.
 
 ---
 
@@ -636,6 +709,9 @@ Den Ordner `EasyGear` nach `Interface/AddOns/` kopieren (Dateiliste siehe oben),
 | `/eg ilvl <zahl>` · `ilvlscale [on\|off]` | Gewicht der Gegenstandsstufe / Skalierung mit der Charakterstufe |
 | `/eg mindelta <zahl>` · `mindeltapct <prozent>` | Mindestvorsprung für „Verbesserung“ |
 | `/eg icons` · `quest` · `items` · `tooltip` · `diff` | Markierungen Taschen / Quests / Händler-Beute-AH, Tooltipzeilen, Attribut-Differenzen ein-/ausschalten |
+| `/eg marks` | die Item-Markierungen (Quest, Rezepte, Sondieren, Mahlen) und ihren Stand anzeigen |
+| `/eg marks <name> [on\|off]` | eine Markierung schalten; die Kurzformen `needed` · `questitem` · `recipes` · `prospect` · `mill` · `known` gehen auch ohne `marks` |
+| `/eg options` | Einstellungsseite (auch unter *Interface → AddOns → EasyGear*) |
 | `/eg scale <0.5–2.0>` | Fenstergröße |
 | `/eg status` | aktuelle Einstellungen |
 | `/eg locale` | welche Sprachdatei aktiv ist, wie Rüstungs-/Waffentypen erkannt wurden |
@@ -666,6 +742,60 @@ Der Tooltip ergänzt Wertung, Slot und Wertung des ersetzten Items, das Urteil m
 absolutem und relativem Zugewinn und — wie bei RatingBuster — die **Attribut-Differenzen**
 zum ersetzten Item. Auf dem Charakterfenster und in Vergleichstooltips steht nur die
 Wertung: ein Item mit sich selbst zu vergleichen ergibt keinen Sinn.
+
+### Item-Markierungen: Quest, Rezepte, Sondieren, Mahlen
+
+Neben dem Haken für Ausrüstungs-Upgrades kann ein weiteres Symbol am Item-Symbol sitzen. Es
+zeigt, was du mit dem Item tun kannst — oder was du **nicht** wegwerfen solltest. Die Symbole
+erscheinen an denselben Stellen wie das Upgrade-Häkchen (Taschen, Bank, Händler, Beute- und
+Würfelfenster, Handel, Auktionshaus, Post), und der Tooltip ergänzt eine passende Zeile. Ein
+Upgrade geht immer vor; sonst gilt der erste Treffer aus dieser Liste:
+
+| Symbol | Bedeutung | Standard |
+| :---: | --- | :---: |
+| gelbes **?** | **für eine aktive Quest benötigt** — Item-Ziel einer Quest im Log; der Tooltip nennt Quest und Fortschritt (`Wird für Quest benötigt: Wölfe (3/8)`) | an |
+| gelbes **!** | **Quest-Item mit besonderem Nutzen** — ein *Questgegenstand*, ein Item, das *eine Quest startet* (womöglich eine längere Reihe), oder ein legendäres Item, das keine Ausrüstung ist: aufheben | an |
+| Buch | **Rezept, das du jetzt lernen kannst** | an |
+| Edelstein | **Erz, das du sondieren kannst** (du beherrschst *Sondieren*, Stapel ab 5) | an |
+| Inschrift | **Kraut, das du mahlen kannst** (du beherrschst *Mahlen*, Stapel ab 5) | an |
+| Münze | **Rezept ist dir schon bekannt** — Hinweis, dass es verkauft oder anders verwertet werden kann | **aus** |
+
+Jedes Symbol hat einen eigenen Schalter: `/eg marks` listet sie auf, `/eg marks <name> [on|off]`
+oder die Kurzformen (`/eg prospect off`, `/eg known on`, …) ändern sie, und `/eg options` öffnet
+eine Einstellungsseite mit einem Kästchen je Symbol. Die Schlüssel heißen `showQuestNeedIcons`,
+`showQuestItemIcons`, `showRecipeIcons`, `showProspectIcons`, `showMillIcons` und
+`showKnownRecipes`. Alle setzen die Markierungen für Taschen bzw. Händler/Beute
+(`/eg icons`, `/eg items`) voraus.
+
+So wird erkannt:
+
+* **Tooltip.** EasyGear liest, was der Client auf das Item schreibt: *Questgegenstand*,
+  *Dieser Gegenstand startet eine Quest*, *Sondierbar*, *Mahlbar* und das rote *Bereits
+  bekannt*. Die Texte stammen aus den Global-Strings des Clients und gelten damit in jeder
+  Clientsprache. Gescannt werden nur nicht ausrüstbare Items; Ausrüstung bewertet der
+  Upgrade-Vergleich.
+* **Rezepte.** Ein Rezept ist ein Item der Klasse *Rezept* (Sprachdatei-Schlüssel
+  `RECIPE_TYPE`, Englisch als Notanker) und wird markiert, wenn der Tooltip **keine rote Zeile**
+  außer der Stufenanforderung hat. Rot ist *Erfordert Alchemie (300)* (Beruf fehlt oder Fertigkeit
+  zu niedrig), *Bereits bekannt* oder eine Einschränkung nach Klasse, Volk oder Ruf — ein
+  bekanntes Rezept, eines für einen Beruf, den du nicht hast, und eines, das mehr Fertigkeit
+  braucht, gelten deshalb nie als erlernbar. Die Stufenanforderung wird gegen deine
+  Charakterstufe geprüft.
+* **Questlog.** Die Item-Ziele deiner Quests (`Wolfsfell: 3/8`). Die 3.3.5-API liefert die
+  Quests **eingeklappter Gebiete** im Questlog nicht; klappst du ein Gebiet auf, werden seine
+  Quests erkannt. Belohnungen einer Quest sind keine „benötigten“ Items und werden so nie
+  markiert.
+* **Sondieren und Mahlen** sind Fähigkeiten, EasyGear sucht sie daher im Zauberbuch (der Name
+  in der Clientsprache kommt aus der Zauber-ID). Sondieren gehört zur **Juwelenschleifer**-
+  kunst, nicht zum Bergbau, und Mahlen zur **Inschriftenkunde**. Die *Fertigkeitsstufe*, die ein
+  Erz oder Kraut verlangt (z. B. 350 für Saronit), wird nicht geprüft; ein Stapel unter 5 wird in
+  Taschen nicht markiert.
+
+Questbelohnungen bekommen kein eigenes Symbol (sie tragen das Häkchen der besten Wahl); ihre
+Tooltips zeigen diese Zeilen aber, zum Beispiel *Rezept: kann jetzt erlernt werden*.
+
+Lernst du ein Rezept oder eine Fähigkeit, steigen eine Fertigkeit oder dein Ruf, kommt ein
+Questfortschritt dazu oder ändert sich das Questlog, ziehen die Markierungen von selbst nach.
 
 Questbelohnungen werden nach **Zugewinn** gewertet, nicht nach absoluter Wertung: Stiefel,
 die einen leeren Slot füllen, schlagen einen Umhang, der nur einen etwas schlechteren
@@ -1031,6 +1161,24 @@ nach Dokumentation für 3.3.5a nach, nicht den echten Client.
   Erbstücks in der Tabelle ist eine Annahme**, die `/egup verify` gegen den Client gegenprüft —
   einmal auf deinem Server ausführen.
 * Bei stark abweichenden Custom-Cores können Item-IDs und die `.additem`-Syntax abweichen.
+
+---
+
+## Änderungen in 3.1
+
+* **Weitere Item-Markierungen**, jede mit eigenem Symbol und Schalter (siehe *Item-Markierungen*):
+  für eine aktive Quest benötigt, Quest-Item / Quest-Beginn / Legendäres mit besonderem Nutzen,
+  erlernbares Rezept, Erz zum Sondieren, Kraut zum Mahlen und — standardmäßig aus — Rezept bereits
+  bekannt.
+* **Einstellungsseite** unter *Interface → AddOns → EasyGear* (`/eg options`) mit einem Kästchen
+  für jede Markierung und Tooltip-Zeile; `/eg marks` leistet dasselbe im Chat.
+* Tooltip-Scans werden je Item zwischengespeichert; der Speicher wird geleert, wenn du etwas
+  lernst, nicht bei jedem Ausrüstungswechsel. Die Stapelgröße gehört zur Taschenmarkierung:
+  4 Erz und 5 Erz sehen verschieden aus.
+* Sprachdatei-Schlüssel: `RECIPE_TYPE` und `QUEST_TYPE` (Klassennamen), `MARK_*`
+  (Tooltip-Zeilen), `MK_*` (Markierungsnamen), `OPT_*` (Einstellungsseite), `SET_MARK`,
+  `MARKS_*`, `H_MARKS`, `H_OPTIONS` in allen acht Sprachen. `SET_RECIPES`, `ST_RECIPES` und
+  `H_RECIPES` entfallen.
 
 ---
 
