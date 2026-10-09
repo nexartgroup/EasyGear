@@ -474,7 +474,7 @@ function T.reset(opts)
     if G.EasyGear then
         local EG = G.EasyGear
         EG.itemCache, EG.tipCache = {}, {}
-        EG.scoreCache, EG.stateCache = {}, {}
+        EG.scoreCache, EG.stateCache, EG.recipeCache = {}, {}, {}
         EG.profileCache, EG.equippedTotals, EG.talentCache = nil, nil, nil
         EG.hasTG, EG.hasDW = nil, nil
         EG.epoch = (EG.epoch or 0) + 1

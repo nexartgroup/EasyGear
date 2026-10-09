@@ -56,10 +56,10 @@ local function Score(link, slot) return EG:GetItemScore(EG:GetItemData(link), sl
 ------------------------------------------------------------------------------
 
 Cases.load = function()
-    T.eq(EG.version, "3.0.0", "version")
+    T.eq(EG.version, "3.1.0", "version")
     T.check(EG.SPECS and EG.SPECS.WARRIOR, "specs loaded")
     T.check(EG.HEIRLOOMS and EG.HEIRLOOMS[42943], "heirlooms loaded")
-    T.check(T.chat():find("EasyGear 3.0.0", 1, true) or T.chat():find("3.0.0", 1, true), "login message")
+    T.check(T.chat():find("EasyGear 3.1.0", 1, true) or T.chat():find("3.1.0", 1, true), "login message")
     T.check(EG.locale.baseOK, "enUS base table present")
 end
 
@@ -962,7 +962,7 @@ Cases.saved_variables_migration = function()
     T.check(EG.db.custom.CUSTOM_X, "custom profiles kept")
     T.eq(EG.db.heirloomBonus, EG.DEFAULTS.heirloomBonus, "new defaults added")
     T.eq(EG.db.autoLeveling, true, "new default: autoLeveling")
-    T.eq(EG.db.version, "3.0.0", "version stamped")
+    T.eq(EG.db.version, "3.1.0", "version stamped")
     T.eq(EG.charDB.profile, "WARRIOR_FURY", "profile choice kept")
 
     -- ein selbst gesetzter Wert bleibt auch bei einer neuen Version
@@ -1088,6 +1088,222 @@ Cases.bag_buttons = function()
     T.bag(0, 1, nil)
     EG:UpdateBagButton(button, 0, 1)
     T.check(button.EGIcon._shown ~= true, "bag: empty slot")
+end
+
+------------------------------------------------------------------------------
+-- Erlernbare Rezepte
+------------------------------------------------------------------------------
+
+local function RecipeType() return EG:SplitAliases(L.RECIPE_TYPE)[1] end
+
+-- Ein Rezept ohne rote Zeile: der Charakter hat den Beruf, die Fertigkeit reicht,
+-- es ist noch nicht gelernt. Rote Zeilen ueber extra.red.
+local function Recipe(extra)
+    local d = { id = ID(), itype = RecipeType(), subtype = "Alchemy", ilvl = 40 }
+    for k, v in pairs(extra or {}) do d[k] = v end
+    return T.item(d)
+end
+
+Cases.recipe_state = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    T.eq(EG.db.showRecipeIcons, true, "an by default")
+
+    T.eq(EG:GetRecipeState(Recipe()), "RECIPE", "learnable recipe")
+    T.eq(EG:GetRecipeState(Recipe({ red = { "Already known" } })), nil, "already known")
+    T.eq(EG:GetRecipeState(Recipe({ red = { "Requires Alchemy (300)" } })), nil, "profession or skill missing")
+    T.eq(EG:GetRecipeState(Recipe({ red = { "Classes: Priest" } })), nil, "other class")
+    T.eq(EG:GetRecipeState(Recipe({ red = { "Requires Alchemy (300)", "Already known" } })), nil, "several red lines")
+
+    -- Stufenanforderung
+    T.eq(EG:GetRecipeState(Recipe({ minLevel = 60 })), "RECIPE", "level requirement met")
+    Setup("WARRIOR", 40, { 31, 0, 0 })
+    T.eq(EG:GetRecipeState(Recipe({ minLevel = 60, red = { "Requires Level 60" } })), nil, "level too low")
+    T.eq(EG:GetRecipeState(Recipe({ minLevel = 35 })), "RECIPE", "level 40 reaches 35")
+
+    -- Alles, was kein Rezept ist, bleibt ohne Markierung
+    local armor = Chest({ [STR] = 10 })
+    T.eq(EG:GetRecipeState(armor), nil, "armor is not a recipe")
+    local potion = T.item({ id = ID(), itype = "Consumable", subtype = "Potion", ilvl = 40 })
+    T.eq(EG:GetRecipeState(potion), nil, "consumable is not a recipe")
+
+    -- Itemdaten noch nicht im Client: spaeter noch einmal fragen
+    local state, pending = EG:GetRecipeState("|cffffffff|Hitem:99999:0:0:0:0:0:0:0:80|h[Unbekannt]|h|r")
+    T.eq(state, nil, "uncached: no state")
+    T.eq(pending, true, "uncached: pending")
+    T.eq(EG:GetRecipeState(nil), nil, "no link")
+end
+
+Cases.recipe_class_name_per_language = function()
+    -- Die Klasse kommt als lokalisierter Text aus GetItemInfo(); die Namen stehen
+    -- in den Sprachdateien, die englischen gelten immer als Notanker.
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    T.check(EG:IsRecipeType(RecipeType()), "client-language name")
+    T.check(EG:IsRecipeType("Recipe"), "English fallback")
+    T.check(EG:IsRecipeType("RECIPE"), "case-insensitive")
+    T.check(not EG:IsRecipeType("Armor"), "armor is not a recipe")
+    T.check(not EG:IsRecipeType(""), "empty")
+    T.check(not EG:IsRecipeType(nil), "nil")
+    local en = EasyGearLocales.enUS
+    T.eq(en.RECIPE_TYPE, "Recipe", "enUS reference value")
+end
+
+Cases.recipe_markers_bags = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    EG:HookOverlays()
+    local learn = Recipe()
+    local known = Recipe({ red = { "Already known" } })
+    T.bag(0, 1, learn); T.bag(0, 2, known)
+    local b1 = CreateFrame("Button", "RecipeBag1")
+    local b2 = CreateFrame("Button", "RecipeBag2")
+    EG:UpdateBagButton(b1, 0, 1)
+    EG:UpdateBagButton(b2, 0, 2)
+    T.check(b1.EGIcon and b1.EGIcon._shown == true, "learnable recipe marked")
+    T.eq(b1.EGIcon._texture, EG.TEX_RECIPE, "recipe symbol")
+    T.check(b2.EGIcon._shown ~= true, "known recipe not marked")
+
+    -- Das Symbol-Objekt wird wiederverwendet: ein Upgrade bekommt wieder das Haekchen
+    T.equip(5, Chest({ [STR] = 100, [STA] = 100 }))
+    local good = Chest({ [STR] = 200, [STA] = 100 })
+    T.bag(0, 1, good)
+    EG:UpdateBagButton(b1, 0, 1)
+    T.check(b1.EGIcon._shown == true, "upgrade marked on the same button")
+    T.eq(b1.EGIcon._texture, EG.TEX_UPGRADE, "check mark restored")
+
+    -- und zurueck zum Rezept
+    T.bag(0, 1, learn)
+    EG:UpdateBagButton(b1, 0, 1)
+    T.eq(b1.EGIcon._texture, EG.TEX_RECIPE, "recipe symbol again")
+
+    -- Bank/Haendler/Beute laufen ueber dieselbe Markierung
+    EG:HookOverlays()
+    _G.MerchantFrame = CreateFrame("Frame", "MerchantFrame"); MerchantFrame.page = 1; MerchantFrame.selectedTab = 1
+    local items = { learn, known }
+    _G.GetMerchantItemLink = function(i) return items[i] end
+    local m1 = CreateFrame("Button", "MerchantItem1ItemButton")
+    local m2 = CreateFrame("Button", "MerchantItem2ItemButton")
+    EG:RefreshOverlays()
+    T.check(m1.EGIcon and m1.EGIcon._shown == true, "merchant: learnable recipe marked")
+    T.eq(m1.EGIcon._texture, EG.TEX_RECIPE, "merchant: recipe symbol")
+    T.check(m2.EGIcon._shown ~= true, "merchant: known recipe not marked")
+end
+
+Cases.recipe_setting_and_command = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    local learn = Recipe()
+    T.bag(0, 1, learn)
+    local b = CreateFrame("Button", "RecipeBagOff")
+    local function run(m) T.clearChat(); T.slash("EASYGEAR", m); return T.chat() end
+
+    EG:UpdateBagButton(b, 0, 1)
+    T.check(b.EGIcon._shown == true, "on: marked")
+
+    local out = run("recipes off")
+    T.eq(EG.db.showRecipeIcons, false, "recipes off")
+    T.check(out ~= "", "the command answers")
+    EG:UpdateBagButton(b, 0, 1)
+    T.check(b.EGIcon._shown ~= true, "off: marker gone")
+    T.eq(EG:GetRecipeState(learn), nil, "off: no state")
+
+    run("recipes on")
+    T.eq(EG.db.showRecipeIcons, true, "recipes on")
+    EG:UpdateBagButton(b, 0, 1)
+    T.check(b.EGIcon._shown == true, "on again: marked")
+
+    run("recipes")                          -- ohne Argument: umschalten
+    T.eq(EG.db.showRecipeIcons, false, "toggle off")
+    run("recipe")                           -- Kurzform
+    T.eq(EG.db.showRecipeIcons, true, "toggle on")
+
+    -- der Schalter ist unabhaengig von den uebrigen Markierungen
+    EG.db.showBagIcons = false
+    EG:UpdateBagButton(b, 0, 1)
+    T.check(b.EGIcon._shown ~= true, "bag markers off hides recipes too")
+    EG.db.showBagIcons = true
+
+    T.check(run("status"):find(L.ST_RECIPES, 1, true), "status shows the recipe switch")
+    T.check(run("help"):find("recipes", 1, true), "help lists the command")
+
+    -- /eg reset stellt den Standard (an) wieder her
+    run("recipes off")
+    run("reset")
+    T.eq(EG.db.showRecipeIcons, true, "reset: on")
+end
+
+Cases.recipe_learned_refreshes = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    EG:HookOverlays()
+    local reds = {}
+    local learn = Recipe({ red = reds })
+    T.bag(0, 1, learn); T.bag(0, 2, learn)         -- zweites Exemplar
+    local b1 = CreateFrame("Button", "RecipeBagA")
+    local b2 = CreateFrame("Button", "RecipeBagB")
+    EG:UpdateBagButton(b1, 0, 1)
+    EG:UpdateBagButton(b2, 0, 2)
+    T.check(b1.EGIcon._shown == true and b2.EGIcon._shown == true, "both copies marked")
+
+    -- Rezept gelernt: das zweite Exemplar traegt jetzt "Bereits bekannt"
+    reds[#reds + 1] = "Already known"
+    EG:UpdateBagButton(b2, 0, 2)
+    T.check(b2.EGIcon._shown == true, "cached until something tells us otherwise")
+
+    -- eine fremde Systemmeldung aendert nichts
+    local epoch = EG.epoch
+    T.fire("CHAT_MSG_SYSTEM", "Welcome to the server.")
+    T.eq(EG.epoch, epoch, "unrelated message ignored")
+
+    -- die Meldung ueber das gelernte Rezept verwirft den Zwischenspeicher
+    T.fire("CHAT_MSG_SYSTEM", "You have learned how to create a new item: Elixir of Testing.")
+    T.check(EG.epoch > epoch, "learn message invalidates")
+    T.runTimers()
+    EG:UpdateBagButton(b1, 0, 1)
+    EG:UpdateBagButton(b2, 0, 2)
+    T.check(b1.EGIcon._shown ~= true and b2.EGIcon._shown ~= true, "known now: markers gone")
+
+    -- gestiegene Fertigkeit: wieder neu bewerten
+    local epoch2 = EG.epoch
+    T.fire("SKILL_LINES_CHANGED")
+    T.check(EG.epoch > epoch2, "skill change invalidates")
+    T.check(EG:IsLearnMessage("You have learned a new spell: Fireball."), "spell message")
+    T.check(not EG:IsLearnMessage("You are now Rested."), "other message")
+    T.check(not EG:IsLearnMessage(nil), "nil message")
+end
+
+Cases.recipe_tooltip_line = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    local tip = GameTooltip
+
+    local function lines(link)
+        tip:ClearLines(); tip.EGDone = nil
+        EG.AddTooltipInfo(tip, link)
+        local out = {}
+        for _, ln in ipairs(tip._lines) do out[#out + 1] = (ln.text or ln.left or "") end
+        return table.concat(out, "\n")
+    end
+
+    T.check(lines(Recipe()):find(L.RECIPE_LEARNABLE, 1, true), "learnable: tooltip says so")
+    T.check(not lines(Recipe({ red = { "Already known" } })):find(L.RECIPE_LEARNABLE, 1, true), "known: no line")
+    T.check(not lines(Recipe({ red = { "Requires Alchemy (300)" } })):find(L.RECIPE_LEARNABLE, 1, true),
+        "not learnable: no line")
+
+    -- einmal je Tooltip
+    tip:ClearLines(); tip.EGDone = nil
+    local link = Recipe()
+    EG.AddTooltipInfo(tip, link)
+    EG.AddTooltipInfo(tip, link)
+    local n = 0
+    for _, ln in ipairs(tip._lines) do if (ln.text or ""):find(L.RECIPE_LEARNABLE, 1, true) then n = n + 1 end end
+    T.eq(n, 1, "only once per tooltip")
+
+    -- abgeschaltet: keine Zeile
+    EG.db.showRecipeIcons = false
+    EG:InvalidateComparisons()
+    T.check(not lines(Recipe()):find(L.RECIPE_LEARNABLE, 1, true), "off: no line")
+    EG.db.showRecipeIcons = true
+
+    -- Ausruestung bleibt unberuehrt
+    T.equip(5, Chest({ [STR] = 100, [STA] = 100 }))
+    local better = Chest({ [STR] = 150, [STA] = 90 })
+    T.check(lines(better):find(L.UPGRADE, 1, true), "armor tooltip unchanged")
 end
 
 return Cases
