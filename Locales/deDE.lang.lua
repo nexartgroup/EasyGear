@@ -350,4 +350,11 @@ EasyGearLocales["deDE"] = {
     SPEC_DRUID_LEVELING_D = "Standardmäßig Wildheits-Gewichte (Katze und Bär); mit den meisten Talenten in Gleichgewicht gelten die Zauberer-Gewichte.",
     SPEC_DRUID_ALLROUND   = "Allround",
     SPEC_DRUID_ALLROUND_D = "Deckt Wildheit, Gleichgewicht und Heilen ab - für Hybrid-Ausrüstung und Zweitspezialisierung.",
+
+    --------------------------------------------------------------- recipes
+    RECIPE_TYPE       = "Rezept",
+    RECIPE_LEARNABLE  = "Rezept: kann jetzt erlernt werden",
+    SET_RECIPES       = "Markierung erlernbarer Rezepte: %s",
+    ST_RECIPES        = "Rezepte",
+    H_RECIPES         = "erlernbare, noch nicht bekannte Rezepte markieren",
 }

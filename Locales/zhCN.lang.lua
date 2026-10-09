@@ -247,4 +247,11 @@ EasyGearLocales["zhCN"] = {
     SPEC_DRUID_RESTO      = "恢复（治疗）",
     SPEC_DRUID_LEVELING   = "练级",
     SPEC_DRUID_ALLROUND   = "全能",
+
+    --------------------------------------------------------------- recipes
+    RECIPE_TYPE       = "配方",
+    RECIPE_LEARNABLE  = "配方：现在可以学习",
+    SET_RECIPES       = "可学习配方标记：%s",
+    ST_RECIPES        = "配方",
+    H_RECIPES         = "标记可以学习且尚未学会的配方",
 }

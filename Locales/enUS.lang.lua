@@ -384,4 +384,12 @@ EasyGearLocales["enUS"] = {
     SPEC_DRUID_LEVELING_D = "Feral weights by default (cat and bear); with most talents in Balance the caster weights apply.",
     SPEC_DRUID_ALLROUND   = "All-round",
     SPEC_DRUID_ALLROUND_D = "Covers feral, balance and healing - for hybrid gear and a second spec.",
+
+    --------------------------------------------------------------- recipes
+    -- RECIPE_TYPE: the client's name of the item class "Recipe" ("a|b" = several spellings)
+    RECIPE_TYPE       = "Recipe",
+    RECIPE_LEARNABLE  = "Recipe: you can learn this now",
+    SET_RECIPES       = "Learnable recipe markers: %s",
+    ST_RECIPES        = "Recipes",
+    H_RECIPES         = "mark recipes you can learn and do not know yet",
 }

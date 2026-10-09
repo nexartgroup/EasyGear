@@ -273,4 +273,11 @@ EasyGearLocales["ruRU"] = {
     SPEC_DRUID_RESTO      = "Исцеление (лекарь)",
     SPEC_DRUID_LEVELING   = "Прокачка",
     SPEC_DRUID_ALLROUND   = "Универсальный",
+
+    --------------------------------------------------------------- recipes
+    RECIPE_TYPE       = "Рецепт",
+    RECIPE_LEARNABLE  = "Рецепт: можно выучить сейчас",
+    SET_RECIPES       = "Отметка доступных рецептов: %s",
+    ST_RECIPES        = "Рецепты",
+    H_RECIPES         = "отмечать рецепты, которые можно выучить и которых вы ещё не знаете",
 }

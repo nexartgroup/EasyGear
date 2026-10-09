@@ -273,4 +273,11 @@ EasyGearLocales["esES"] = {
     SPEC_DRUID_RESTO      = "Restauración (sanador)",
     SPEC_DRUID_LEVELING   = "Subida de nivel",
     SPEC_DRUID_ALLROUND   = "Versátil",
+
+    --------------------------------------------------------------- recipes
+    RECIPE_TYPE       = "Receta",
+    RECIPE_LEARNABLE  = "Receta: puedes aprenderla ahora",
+    SET_RECIPES       = "Marca de recetas aprendibles: %s",
+    ST_RECIPES        = "Recetas",
+    H_RECIPES         = "marcar las recetas que puedes aprender y aún no conoces",
 }

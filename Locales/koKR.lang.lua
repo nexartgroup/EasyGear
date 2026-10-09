@@ -247,4 +247,11 @@ EasyGearLocales["koKR"] = {
     SPEC_DRUID_RESTO      = "회복 (힐러)",
     SPEC_DRUID_LEVELING   = "레벨링",
     SPEC_DRUID_ALLROUND   = "만능",
+
+    --------------------------------------------------------------- recipes
+    RECIPE_TYPE       = "제조법",
+    RECIPE_LEARNABLE  = "제조법: 지금 배울 수 있습니다",
+    SET_RECIPES       = "배울 수 있는 제조법 표시: %s",
+    ST_RECIPES        = "제조법",
+    H_RECIPES         = "아직 모르는, 배울 수 있는 제조법 표시",
 }
