@@ -23,6 +23,7 @@ local L     = EG.L
 local COLOR = EG.COLOR
 
 local TEX_UPGRADE = EG.TEX_UPGRADE
+local TEX_RECIPE  = EG.TEX_RECIPE
 local DEFAULT_ICON_SIZE = 20
 
 local pairs, ipairs, type, tonumber, pcall = pairs, ipairs, type, tonumber, pcall
@@ -46,19 +47,39 @@ end
 
 --[[ state:  "UPGRADE"  gruen  - echtes Upgrade
              "LEVEL"    gelb   - Upgrade, aber Charakterstufe zu niedrig
-             nil               - kein Icon                                 ]]
+             "RECIPE"   Buch   - erlernbares, noch nicht bekanntes Rezept
+             nil               - kein Icon
+
+     Das Icon ist an jedem Button dasselbe Textur-Objekt und wird wiederverwendet:
+     der Ausschnitt muss deshalb bei jedem Zustand gesetzt werden.            ]]
 function EG:ApplyIconState(icon, state)
     if state == "UPGRADE" then
         icon:SetTexture(TEX_UPGRADE)
+        icon:SetTexCoord(0, 1, 0, 1)
         icon:SetVertexColor(0, 1, 0)
         icon:Show()
     elseif state == "LEVEL" then
         icon:SetTexture(TEX_UPGRADE)
+        icon:SetTexCoord(0, 1, 0, 1)
         icon:SetVertexColor(1, 0.85, 0)
+        icon:Show()
+    elseif state == "RECIPE" then
+        icon:SetTexture(TEX_RECIPE)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)    -- ohne den Rand des Symbols
+        icon:SetVertexColor(1, 1, 1)
         icon:Show()
     else
         icon:Hide()
     end
+end
+
+--[[ Zustand eines Items fuer die Markierung: Upgrade zuerst, sonst Rezept.
+     Zweiter Rueckgabewert: true, wenn die Itemdaten noch nicht im Client liegen. ]]
+function EG:GetMarkerState(link)
+    local state, pending = self:GetUpgradeState(link)
+    if pending then return nil, true end
+    if state then return state end
+    return self:GetRecipeState(link)
 end
 
 --[[ Aktualisiert das Icon eines Taschen-Buttons.                          ]]
@@ -91,7 +112,7 @@ function EG:UpdateBagButton(button, bagID, slotID)
         return
     end
 
-    local state, pending = self:GetUpgradeState(link)
+    local state, pending = self:GetMarkerState(link)
     if pending then
         -- Item noch nicht im Client-Cache: Markierung loeschen und
         -- gleich noch einmal versuchen
@@ -114,7 +135,7 @@ function EG:MarkButton(button, link)
         return
     end
 
-    local state, pending = self:GetUpgradeState(link)
+    local state, pending = self:GetMarkerState(link)
     if pending then
         icon:Hide()
         self:Debounce("overlayretry", 0.6, function() self:RefreshOverlays() end)

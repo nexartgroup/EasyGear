@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 3.0.0
+    EasyGear 3.1.0
     Gear-Bewertung, Upgrade-Erkennung und Vergleich fuer WoW 3.3.5a (WotLK)
 
     Kompatibilitaet:
@@ -40,7 +40,7 @@
 ------------------------------------------------------------------------------
 
 local ADDON_NAME    = "EasyGear"
-local ADDON_VERSION = "3.0.0"
+local ADDON_VERSION = "3.1.0"
 
 EasyGear = EasyGear or {}
 local EG = EasyGear
@@ -64,9 +64,11 @@ local OFFHAND_FACTOR    = 0.5   -- Nebenhand-Waffen verursachen nur halben Schad
 -- Texturen
 local TEX_UPGRADE = "Interface\\Buttons\\UI-CheckBox-Check"
 local TEX_VENDOR  = "Interface\\MoneyFrame\\UI-GoldIcon"
+local TEX_RECIPE  = "Interface\\Icons\\INV_Misc_Book_09"
 
 EG.TEX_UPGRADE = TEX_UPGRADE
 EG.TEX_VENDOR  = TEX_VENDOR
+EG.TEX_RECIPE  = TEX_RECIPE
 
 -- Standardeinstellungen (SavedVariables)
 local DEFAULTS = {
@@ -77,6 +79,7 @@ local DEFAULTS = {
     showBagIcons     = true,
     showQuestIcons   = true,
     showItemIcons    = true,    -- Haendler, Beute, Wuerfeln, Auktionshaus, Handel, Post
+    showRecipeIcons  = true,    -- erlernbare, noch nicht bekannte Rezepte markieren
     showTooltip      = true,
     showTooltipStats = true,    -- Slot- und Vergleichszeile im Tooltip
     tooltipDiff      = true,    -- Attribut-Differenzen im Tooltip
@@ -485,6 +488,7 @@ EG.profileCache = nil
 EG.epoch = 0
 EG.scoreCache = {}
 EG.stateCache = {}
+EG.recipeCache = {}
 
 --[[ Jede Aenderung an Profil, Ausruestung oder Einstellungen verwirft die
      berechneten Vergleiche und erhoeht die Epoche; daran erkennen die
@@ -492,6 +496,7 @@ EG.stateCache = {}
 function EG:InvalidateComparisons()
     self.scoreCache = {}
     self.stateCache = {}
+    self.recipeCache = {}
     self.epoch = (self.epoch or 0) + 1
 end
 
@@ -2478,6 +2483,117 @@ function EG:GetUpgradeState(link)
 end
 
 ------------------------------------------------------------------------------
+-- 12e  Erlernbare Rezepte
+------------------------------------------------------------------------------
+
+--[[ Ein Rezept gilt als "erlernbar", wenn
+       - es ein Rezept ist (Itemklasse "Rezept"),
+       - der Tooltip keine rote Zeile ausser der Stufenanforderung traegt und
+       - die Charakterstufe fuer die Stufenanforderung reicht.
+     Der Tooltip sagt alles Uebrige selbst, in jeder Clientsprache und ohne dass
+     das Addon Berufe oder Fertigkeitsstufen kennen muesste: rot sind
+       "Erfordert Alchemie (300)"  - Beruf fehlt oder Fertigkeit zu niedrig,
+       "Bereits bekannt"           - schon gelernt,
+       Klasse, Volk, Ruf           - nicht fuer diesen Charakter.
+     Ein gelerntes Rezept hat daher nie eine Markierung, und ein Rezept fuer einen
+     Beruf, den der Charakter nicht hat, ebenfalls nicht.
+
+     Die Itemklasse kommt als lokalisierter Text aus GetItemInfo(). Die Namen stehen
+     in den Sprachdateien (RECIPE_TYPE, mehrere Schreibweisen mit | getrennt);
+     Clientsprache zuerst, dann Englisch.                                     ]]
+local recipeTypes = nil          -- kleingeschriebener Name -> true
+
+local function BuildRecipeTypes()
+    recipeTypes = {}
+    local function add(list)
+        for _, name in ipairs(SplitAliases(list or "")) do recipeTypes[slower(name)] = true end
+    end
+    add(L.RECIPE_TYPE ~= "RECIPE_TYPE" and L.RECIPE_TYPE or "")
+    local en = EasyGearLocales and EasyGearLocales.enUS
+    if en then add(en.RECIPE_TYPE) end
+end
+
+function EG:IsRecipeType(itemType)
+    if not itemType or itemType == "" then return false end
+    if not recipeTypes then BuildRecipeTypes() end
+    return recipeTypes[slower(itemType)] == true
+end
+
+-- Systemmeldung "Du hast ... gelernt": die Vorlagen liefert der Client in seiner
+-- Sprache (ERR_LEARN_*). Fehlen sie, gelten die englischen als Notanker.
+local learnPatterns = nil
+
+function EG:IsLearnMessage(msg)
+    if type(msg) ~= "string" then return false end
+    if not learnPatterns then
+        learnPatterns = {}
+        local fallback = {
+            ERR_LEARN_RECIPE_S  = "You have learned how to create a new item: %s.",
+            ERR_LEARN_SPELL_S   = "You have learned a new spell: %s.",
+            ERR_LEARN_ABILITY_S = "You have learned a new ability: %s.",
+        }
+        for global, default in pairs(fallback) do
+            local tpl = _G[global]
+            if type(tpl) ~= "string" or tpl == "" then tpl = default end
+            learnPatterns[#learnPatterns + 1] = "^" .. TemplateToPattern(tpl, "(.+)")
+        end
+    end
+    for _, pattern in ipairs(learnPatterns) do
+        if smatch(msg, pattern) then return true end
+    end
+    return false
+end
+
+-- Rueckgabe: bekannt (bool), gesperrt (bool); nil, wenn der Tooltip noch nicht bereit ist.
+local function ScanRecipeTooltip(link)
+    if not SetScanTip(link) then return nil end
+
+    local knownText = _G.ITEM_SPELL_KNOWN or "Already known"
+    local known, blocked = false, false
+
+    for i = 2, scanTip:NumLines() do
+        local fs   = TipLine(i)
+        local text = fs and fs:GetText()
+        if text and text ~= "" and IsRed(fs) then
+            if text == knownText then
+                known = true
+            elseif not smatch(text, minLevelPattern) then
+                blocked = true
+            end
+        end
+    end
+    return known, blocked
+end
+
+--[[ Zustand fuer die Markierungen:
+       "RECIPE"  erlernbares, noch nicht bekanntes Rezept
+       nil       keine Markierung
+     Zweiter Rueckgabewert wie bei GetUpgradeState: true, wenn die Itemdaten noch
+     nicht im Client liegen.                                                  ]]
+function EG:GetRecipeState(link)
+    if not link then return nil end
+    if not (self.db and self.db.showRecipeIcons ~= false) then return nil end
+
+    local hit = self.recipeCache[link]
+    if hit ~= nil then return hit or nil end
+
+    local name, _, _, _, minLevel, itemType = GetItemInfo(link)
+    if not name then return nil, true end
+
+    local state = false
+    if self:IsRecipeType(itemType) then
+        local known, blocked = ScanRecipeTooltip(link)
+        if known == nil then return nil, true end
+        if not known and not blocked and (UnitLevel("player") or 1) >= (tonumber(minLevel) or 0) then
+            state = "RECIPE"
+        end
+    end
+
+    self.recipeCache[link] = state
+    return state or nil
+end
+
+------------------------------------------------------------------------------
 -- 13  Questbelohnungen
 ------------------------------------------------------------------------------
 
@@ -2785,7 +2901,18 @@ local function AddTooltipInfo(tooltip, forcedLink)
     if not link then return end
 
     local item = EG:GetItemData(link)
-    if not item or not item.equipLoc or item.equipLoc == "" then return end
+    if not item then return end
+
+    -- Kein Ausruestungsgegenstand: nur bei Rezepten gibt es etwas zu sagen.
+    if not item.equipLoc or item.equipLoc == "" then
+        if EG:GetRecipeState(link) == "RECIPE" then
+            tooltip.EGDone = true
+            tooltip:AddLine(" ")
+            tooltip:AddLine(COLOR.good .. L.RECIPE_LEARNABLE .. COLOR.reset)
+            tooltip:Show()
+        end
+        return
+    end
 
     local result = EG:Compare(link)
     if not result then return end
@@ -3107,6 +3234,7 @@ local HELP = {
     { "/eg mindelta <number>",                "H_MINDELTA" },
     { "/eg mindeltapct <percent>",            "H_MINDELTAPCT" },
     { "/eg icons | quest | items | tooltip | diff", "H_TOGGLES" },
+    { "/eg recipes [on|off]",                 "H_RECIPES" },
     { "/eg scale <0.5-2.0>",                  "H_SCALE" },
     { "/eg status",                           "H_STATUS" },
     { "/eg locale",                           "H_LOCALE" },
@@ -3164,6 +3292,7 @@ function EG:PrintStatus()
     self:Raw("Bags: " .. OnOff(self.db.showBagIcons)
         .. " | Quest: " .. OnOff(self.db.showQuestIcons)
         .. " | " .. L.ST_ITEMS .. ": " .. OnOff(self.db.showItemIcons)
+        .. " | " .. L.ST_RECIPES .. ": " .. OnOff(self.db.showRecipeIcons ~= false)
         .. " | Tooltip: " .. OnOff(self.db.showTooltip)
         .. " | " .. L.ST_DIFF .. ": " .. OnOff(self.db.tooltipDiff))
 end
@@ -3425,6 +3554,11 @@ SlashCmdList["EASYGEAR"] = function(msg)
         Toggle("showQuestIcons"); return
     elseif cmd == "items" then
         Toggle("showItemIcons"); return
+    elseif cmd == "recipes" or cmd == "recipe" then
+        EG.db.showRecipeIcons = ParseSwitch(rest, EG.db.showRecipeIcons ~= false)
+        ApplySettingChange(false)
+        EG:Print(L.SET_RECIPES:format(OnOff(EG.db.showRecipeIcons)))
+        return
     elseif cmd == "tooltip" then
         Toggle("showTooltip"); return
     elseif cmd == "diff" then
@@ -3522,6 +3656,10 @@ eventFrame:RegisterEvent("BAG_UPDATE")
 eventFrame:RegisterEvent("QUEST_COMPLETE")
 eventFrame:RegisterEvent("QUEST_DETAIL")
 eventFrame:RegisterEvent("QUEST_ITEM_UPDATE")
+-- Rezepte: ein neu gelerntes Rezept oder eine gestiegene Fertigkeit aendert, was
+-- "erlernbar" heisst. Nicht jeder 3.3.5a-Fork kennt alle Namen.
+pcall(eventFrame.RegisterEvent, eventFrame, "SKILL_LINES_CHANGED")
+pcall(eventFrame.RegisterEvent, eventFrame, "CHAT_MSG_SYSTEM")
 -- Talentwechsel (Doppelspezialisierung); nicht jeder 3.3.5a-Fork kennt alle Namen
 pcall(eventFrame.RegisterEvent, eventFrame, "PLAYER_TALENT_UPDATE")
 pcall(eventFrame.RegisterEvent, eventFrame, "ACTIVE_TALENT_GROUP_CHANGED")
@@ -3598,6 +3736,15 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 
     if event == "BAG_UPDATE" then
         EG:Debounce("bag", 0.3, function() EG:RefreshAllBags() end)
+        return
+    end
+
+    if event == "SKILL_LINES_CHANGED" or event == "CHAT_MSG_SYSTEM" then
+        -- Bei Systemmeldungen nur reagieren, wenn ein Rezept gelernt wurde.
+        if event == "CHAT_MSG_SYSTEM" and not EG:IsLearnMessage(arg1) then return end
+        EG.recipeCache = {}
+        EG.epoch = (EG.epoch or 0) + 1
+        EG:Debounce("recipeevt", 0.5, function() EG:RefreshAllBags() end)
         return
     end
 
