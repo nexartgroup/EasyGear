@@ -38,6 +38,8 @@ local function ResetWorld()
         target   = nil,
         bankOpen = false,
         quest    = nil,
+        spells   = {},            -- Zauber-IDs im Zauberbuch
+        questLog = {},            -- { { title=, header=bool, objectives={ {desc=, kind=} } } }
     }
     T.world = World
 end
@@ -100,6 +102,7 @@ function Methods.CreateTexture(self) return NewFrame("Texture", nil, self) end
 function Methods.CreateFontString(self) return NewFrame("FontString", nil, self) end
 function Methods.SetTexture(self, t) self._texture = t end
 function Methods.SetVertexColor(self, r, g, b) self._vertex = { r, g, b } end
+function Methods.SetTexCoord(self, a, b, c, d) self._coords = { a, b, c, d } end
 function Methods.SetChecked(self, v) self._checked = v end
 function Methods.GetChecked(self) return self._checked end
 function Methods.SetID(self, v) self._id = v end
@@ -203,6 +206,13 @@ SetStrings({
     ITEM_SPELL_TRIGGER_ONUSE = "Use:",
     ITEM_SPELL_TRIGGER_ONPROC = "Chance on hit:",
     ITEM_SOCKET_BONUS = "Socket Bonus: %s",
+    ITEM_SPELL_KNOWN = "Already known",
+    ITEM_BIND_QUEST = "Quest Item",
+    ITEM_STARTS_QUEST = "This Item Begins a Quest",
+    ITEM_PROSPECTABLE = "Prospectable",
+    ITEM_MILLABLE = "Millable",
+    QUEST_OBJECTS_FOUND = "%s: %d/%d",
+    BOOKTYPE_SPELL = "spell",
     ITEM_UNIQUE = "Unique",
     ITEM_UNIQUE_EQUIPPABLE = "Unique-Equipped",
     SPELL_STATALL = "All Stats",
@@ -306,6 +316,56 @@ G.time = os.time
 G.GetItemQualityColor = function() return 1, 1, 1 end
 G.GetCoinTextureString = function(v) return tostring(v) .. "c" end
 G.FauxScrollFrame_GetOffset = function() return 0 end
+
+------------------------------------------------------------------------------
+-- Zauberbuch, Questlog, Einstellungsseiten
+------------------------------------------------------------------------------
+
+-- Zaubernamen je Clientsprache (nur die, die EasyGear abfragt)
+T.spellNames = {
+    [31252] = { enUS = "Prospecting", deDE = "Sondieren" },
+    [51005] = { enUS = "Milling",     deDE = "Mahlen" },
+}
+local function SpellName(id)
+    local names = T.spellNames[id]
+    return names and (names[World.locale] or names.enUS) or nil
+end
+function G.GetSpellInfo(id)
+    local name = SpellName(id)
+    if name then return name, "", "Interface\\Icons\\spell" .. id end
+end
+function G.GetNumSpellTabs() return 2 end
+function G.GetSpellTabInfo(tab)
+    -- Reiter 1: Zauber 1-3, Reiter 2: ab 4 (der Rest des Zauberbuchs)
+    if tab == 1 then return "General", "tex", 0, 3 end
+    return "Professions", "tex", 3, math.max(0, #World.spells - 3)
+end
+function G.GetSpellName(index, book)
+    local id = World.spells[index]
+    if id then return SpellName(id) or ("Spell" .. id), "" end
+end
+
+function G.GetNumQuestLogEntries()
+    return #World.questLog, #World.questLog
+end
+function G.GetQuestLogTitle(i)
+    local q = World.questLog[i]
+    if not q then return end
+    return q.title, 80, nil, nil, q.header and 1 or nil
+end
+function G.GetNumQuestLeaderBoards(i)
+    local q = World.questLog[i]
+    return q and q.objectives and #q.objectives or 0
+end
+function G.GetQuestLogLeaderBoard(j, i)
+    local q = World.questLog[i]
+    local o = q and q.objectives and q.objectives[j]
+    if o then return o.desc, o.kind, o.done end
+end
+
+T.optionPanels, T.optionOpened = {}, 0
+function G.InterfaceOptions_AddCategory(panel) table.insert(T.optionPanels, panel) end
+function G.InterfaceOptionsFrame_OpenToCategory(panel) T.optionOpened = T.optionOpened + 1; T.optionTarget = panel end
 
 ------------------------------------------------------------------------------
 -- Items
@@ -474,7 +534,9 @@ function T.reset(opts)
     if G.EasyGear then
         local EG = G.EasyGear
         EG.itemCache, EG.tipCache = {}, {}
-        EG.scoreCache, EG.stateCache, EG.recipeCache = {}, {}, {}
+        EG.scoreCache, EG.stateCache, EG.factCache = {}, {}, {}
+        EG.factRetries, EG.spellCount = {}, nil
+        EG.questNeeds, EG.questNeedsPrint, EG.abilities = nil, nil, nil
         EG.profileCache, EG.equippedTotals, EG.talentCache = nil, nil, nil
         EG.hasTG, EG.hasDW = nil, nil
         EG.epoch = (EG.epoch or 0) + 1
@@ -506,6 +568,15 @@ function T.bag(bag, slot, link, count)
     World.bags[bag] = World.bags[bag] or { size = 16 }
     World.bags[bag][slot] = link and { link = link, count = count or 1 } or nil
 end
+
+-- Faehigkeit lernen (Zauber-ID) / Questlog setzen; der Zauberbuch-Eintrag
+-- steht an Position 4 oder spaeter (Reiter "Professions")
+function T.learnSpell(id)
+    local sp = World.spells
+    while #sp < 3 do sp[#sp + 1] = 1 end
+    sp[#sp + 1] = id
+end
+function T.setQuestLog(list) World.questLog = list end
 
 function T.fire(event, ...)
     for _, f in ipairs(Frames) do

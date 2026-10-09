@@ -1144,7 +1144,8 @@ Cases.recipe_class_name_per_language = function()
     T.check(not EG:IsRecipeType(""), "empty")
     T.check(not EG:IsRecipeType(nil), "nil")
     local en = EasyGearLocales.enUS
-    T.eq(en.RECIPE_TYPE, "Recipe", "enUS reference value")
+    T.eq(en.RECIPE_TYPE, "Recipe|Recipes", "enUS reference value (singular first, plural as an alias)")
+    T.check(EG:IsRecipeType("Recipes"), "plural")
 end
 
 Cases.recipe_markers_bags = function()
@@ -1220,8 +1221,8 @@ Cases.recipe_setting_and_command = function()
     T.check(b.EGIcon._shown ~= true, "bag markers off hides recipes too")
     EG.db.showBagIcons = true
 
-    T.check(run("status"):find(L.ST_RECIPES, 1, true), "status shows the recipe switch")
-    T.check(run("help"):find("recipes", 1, true), "help lists the command")
+    T.check(run("status"):find(L.MK_RECIPE, 1, true), "status shows the recipe switch")
+    T.check(run("help"):find("marks", 1, true), "help lists the marker command")
 
     -- /eg reset stellt den Standard (an) wieder her
     run("recipes off")
@@ -1259,10 +1260,19 @@ Cases.recipe_learned_refreshes = function()
     EG:UpdateBagButton(b2, 0, 2)
     T.check(b1.EGIcon._shown ~= true and b2.EGIcon._shown ~= true, "known now: markers gone")
 
-    -- gestiegene Fertigkeit: wieder neu bewerten
+    -- gestiegene Fertigkeit: nur gesperrte Rezepte werden neu bewertet
+    local blocked = Recipe({ red = { "Requires Alchemy (300)" } })
+    local ok = Recipe()
+    T.eq(EG:GetRecipeState(blocked), nil, "blocked by skill")
+    T.eq(EG:GetRecipeState(ok), "RECIPE", "learnable")
     local epoch2 = EG.epoch
-    T.fire("SKILL_LINES_CHANGED")
-    T.check(EG.epoch > epoch2, "skill change invalidates")
+    T.fire("SKILL_LINES_CHANGED"); T.runTimers()
+    T.check(EG.epoch > epoch2, "skill change re-evaluates blocked recipes")
+    T.check(EG.factCache[ok] ~= nil, "...but keeps everything else")
+    T.check(EG.factCache[blocked] == nil, "...and drops the blocked one")
+    local epoch3 = EG.epoch
+    T.fire("SKILL_LINES_CHANGED"); T.runTimers()
+    T.eq(EG.epoch, epoch3, "nothing blocked left: nothing to do")
     T.check(EG:IsLearnMessage("You have learned a new spell: Fireball."), "spell message")
     T.check(not EG:IsLearnMessage("You are now Rested."), "other message")
     T.check(not EG:IsLearnMessage(nil), "nil message")
@@ -1304,6 +1314,530 @@ Cases.recipe_tooltip_line = function()
     T.equip(5, Chest({ [STR] = 100, [STA] = 100 }))
     local better = Chest({ [STR] = 150, [STA] = 90 })
     T.check(lines(better):find(L.UPGRADE, 1, true), "armor tooltip unchanged")
+end
+
+------------------------------------------------------------------------------
+-- Weitere Markierungen: Quest, Sondieren, Mahlen, bekannte Rezepte
+------------------------------------------------------------------------------
+
+-- Ein Item ohne Ausruestungsplatz; extra = zusaetzliche Tooltip-Zeilen
+local function Misc(d)
+    d = d or {}
+    d.id = d.id or ID()
+    d.itype = d.itype or "Miscellaneous"
+    d.subtype = d.subtype or "Junk"
+    d.ilvl = d.ilvl or 1
+    return T.item(d)
+end
+local function Line(text, color) return { text = text, color = color or "white" } end
+local function State(link, count) return (EG:GetMarkState(link, count)) end
+
+local function TipText(link)
+    local tip = GameTooltip
+    tip:ClearLines(); tip.EGDone = nil
+    EG.AddTooltipInfo(tip, link)
+    local out = {}
+    for _, ln in ipairs(tip._lines) do out[#out + 1] = (ln.text or ln.left or "") end
+    return table.concat(out, "\n")
+end
+
+local function BagButton(name, link, count)
+    T.bag(0, 1, link, count)
+    local b = CreateFrame("Button", name)
+    EG:UpdateBagButton(b, 0, 1)
+    return b
+end
+
+Cases.marks_defaults = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    T.eq(EG.db.showQuestNeedIcons, true, "needed: on")
+    T.eq(EG.db.showQuestItemIcons, true, "quest item: on")
+    T.eq(EG.db.showRecipeIcons, true, "recipes: on")
+    T.eq(EG.db.showProspectIcons, true, "prospect: on")
+    T.eq(EG.db.showMillIcons, true, "mill: on")
+    T.eq(EG.db.showKnownRecipes, false, "known recipes: off")
+
+    local order, seen = {}, { [EG.TEX_UPGRADE] = true }
+    for _, m in ipairs(EG.MARKS) do
+        order[#order + 1] = m.state
+        T.check(type(m.tex) == "string" and m.tex ~= "", m.state .. " has a symbol")
+        T.check(not seen[m.tex], m.state .. " symbol is its own")
+        seen[m.tex] = true
+        T.check(#m.coords == 4, m.state .. " has a texture rectangle")
+        T.check(L[m.name] ~= m.name, m.state .. " has a display name")
+        T.check(#m.cmds >= 1, m.state .. " has a command")
+        T.eq(EG.MARK_BY_STATE[m.state], m, m.state .. " is indexed")
+    end
+    T.eq(table.concat(order, ","), "QUESTNEED,QUESTITEM,RECIPE,PROSPECT,MILL,KNOWN", "priority order")
+end
+
+Cases.marks_icon_states = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    local button = CreateFrame("Button", "MarkIconButton")
+    local icon = EG:CreateUpgradeIcon(button)
+
+    EG:ApplyIconState(icon, "UPGRADE")
+    T.eq(icon._texture, EG.TEX_UPGRADE, "upgrade symbol")
+    T.eq(icon._coords[2], 1, "upgrade: full texture")
+    for _, m in ipairs(EG.MARKS) do
+        EG:ApplyIconState(icon, m.state)
+        T.check(icon._shown == true, m.state .. " shown")
+        T.eq(icon._texture, m.tex, m.state .. " texture")
+        T.eq(icon._coords[1], m.coords[1], m.state .. " rectangle")
+        T.eq(icon._vertex[1], 1, m.state .. " untinted")
+    end
+    EG:ApplyIconState(icon, "UPGRADE")
+    T.eq(icon._texture, EG.TEX_UPGRADE, "check mark restored")
+    T.eq(icon._coords[1], 0, "rectangle restored")
+    T.eq(icon._vertex[1], 0, "green again")
+    EG:ApplyIconState(icon, "LEVEL")
+    T.eq(icon._vertex[1], 1, "yellow")
+    EG:ApplyIconState(icon, nil)
+    T.check(icon._shown == false, "no state: hidden")
+    EG:ApplyIconState(icon, "NONSENSE")
+    T.check(icon._shown == false, "unknown state: hidden")
+end
+
+Cases.marks_quest_need = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    local pelt  = Misc({ name = "Wolf Pelt" })
+    local tusk  = Misc({ name = "Boar Tusk" })
+    local boar  = Misc({ name = "Boar" })
+    T.eq(State(pelt), nil, "no quest: no mark")
+
+    T.setQuestLog({
+        { title = "Elwynn Forest", header = true },
+        { title = "Wolves of Elwynn", objectives = {
+            { desc = "Wolf Pelt: 3/8", kind = "item" },
+            { desc = "Wolf slain: 2/5", kind = "monster" } } },
+        { title = "Boars", objectives = { { desc = "Boar: 1/5", kind = "monster" } } },
+    })
+    T.fire("QUEST_LOG_UPDATE"); T.runTimers()
+    T.eq(State(pelt), "QUESTNEED", "item objective")
+    T.eq(State(tusk), nil, "other item")
+    T.eq(State(boar), nil, "a monster objective is not an item")
+
+    local b = BagButton("QuestNeedBag", pelt)
+    T.check(b.EGIcon._shown == true, "bag: marked")
+    T.eq(b.EGIcon._texture, EG.MARK_BY_STATE.QUESTNEED.tex, "bag: quest symbol")
+
+    -- Tooltip nennt Quest und Fortschritt
+    T.check(TipText(pelt):find("Wolves of Elwynn (3/8)", 1, true), "tooltip: quest and progress")
+
+    -- unveraenderter Stand: nichts neu bewerten
+    local epoch = EG.epoch
+    T.fire("QUEST_LOG_UPDATE"); T.runTimers()
+    T.eq(EG.epoch, epoch, "same quest log: no refresh")
+    T.fire("UNIT_QUEST_LOG_CHANGED", "party1"); T.runTimers()
+    T.eq(EG.epoch, epoch, "another unit: ignored")
+
+    -- Fortschritt aendert sich: neu bewerten
+    T.setQuestLog({ { title = "Wolves of Elwynn", objectives = { { desc = "Wolf Pelt: 8/8", kind = "item", done = 1 } } } })
+    T.fire("UNIT_QUEST_LOG_CHANGED", "player"); T.runTimers()
+    T.check(EG.epoch > epoch, "progress change: refresh")
+    T.check(TipText(pelt):find("(8/8)", 1, true), "tooltip: new progress")
+
+    -- Quest abgegeben oder abgebrochen: Markierung weg
+    T.setQuestLog({})
+    T.fire("QUEST_LOG_UPDATE"); T.runTimers()
+    EG:UpdateBagButton(b, 0, 1)
+    T.check(b.EGIcon._shown ~= true, "quest gone: marker gone")
+    T.check(not TipText(pelt):find(L.MARK_QUESTNEED:gsub("%%s.*", ""), 1, true), "quest gone: no tooltip line")
+
+    -- Formate anderer Clients: "Name : 3/8", Name mit Doppelpunkt, Leerraum
+    T.setQuestLog({ { title = "Q", objectives = {
+        { desc = "Wolf Pelt : 3/8", kind = "item" },
+        { desc = "Scroll: Fire: 0/1", kind = "item" } } } })
+    T.fire("QUEST_LOG_UPDATE"); T.runTimers()
+    T.eq(State(pelt), "QUESTNEED", "space before the colon")
+    T.eq(State(Misc({ name = "Scroll: Fire" })), "QUESTNEED", "colon inside the name")
+
+    -- zwei Quests brauchen dasselbe Item
+    T.setQuestLog({
+        { title = "One", objectives = { { desc = "Wolf Pelt: 1/2", kind = "item" } } },
+        { title = "Two", objectives = { { desc = "Wolf Pelt: 0/4", kind = "item" } } },
+    })
+    T.fire("QUEST_LOG_UPDATE"); T.runTimers()
+    local text = TipText(pelt)
+    T.check(text:find("One (1/2)", 1, true) and text:find("Two (0/4)", 1, true), "both quests named")
+
+    -- schaltbar
+    EG.db.showQuestNeedIcons = false
+    T.eq(State(pelt), nil, "off")
+end
+
+Cases.marks_quest_log_robust = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    -- Fehlende Quest-API oder kaputte Zielzeilen duerfen nichts zerstoeren
+    T.setQuestLog({ { title = "Broken", objectives = { { desc = "no numbers here", kind = "item" },
+                                                        { desc = nil, kind = "item" } } } })
+    T.check(pcall(EG.ScanQuestLog, EG) == true, "scan survives odd objectives")
+    T.eq(State(Misc({ name = "no numbers here" })), nil, "unparsable objective ignored")
+
+    local saved = _G.GetQuestLogLeaderBoard
+    _G.GetQuestLogLeaderBoard = function() error("boom") end
+    T.setQuestLog({ { title = "Q", objectives = { { desc = "X: 1/2", kind = "item" } } } })
+    T.check(pcall(EG.ScanQuestLog, EG) == true, "scan survives an API error")
+    _G.GetQuestLogLeaderBoard = saved
+    T.fire("QUEST_LOG_UPDATE"); T.runTimers()
+    T.eq(State(Misc({ name = "X" })), "QUESTNEED", "works again afterwards")
+
+    -- ein kaputter Eintrag kostet nicht die uebrigen
+    T.setQuestLog({
+        { title = "Bad",  objectives = { { desc = "Lost: 1/2", kind = "item" } } },
+        { title = "Good", objectives = { { desc = "Kept: 1/2", kind = "item" } } },
+    })
+    _G.GetQuestLogLeaderBoard = function(j, i)
+        if i == 1 then error("boom") end
+        return saved(j, i)
+    end
+    EG:ScanQuestLog()
+    _G.GetQuestLogLeaderBoard = saved
+    T.eq(State(Misc({ name = "Kept" })), "QUESTNEED", "other quests survive one bad entry")
+    T.eq(State(Misc({ name = "Lost" })), nil, "the bad entry is skipped")
+end
+
+Cases.marks_quest_items = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    local questLine = Misc({ extra = { Line("Quest Item") } })
+    local startLine = Misc({ extra = { Line("This Item Begins a Quest") } })
+    local questType = Misc({ itype = EG:SplitAliases(L.QUEST_TYPE)[1] })
+    local legendary = Misc({ quality = 5 })
+    local epic      = Misc({ quality = 4 })
+    local plain     = Misc()
+    local legGear   = Weapon("INVTYPE_2HWEAPON", "Two-Handed Swords", 200, { [STR] = 100 }, { quality = 5 })
+
+    T.eq(State(questLine), "QUESTITEM", "quest item line")
+    T.eq(State(startLine), "QUESTITEM", "starts a quest")
+    T.eq(State(questType), "QUESTITEM", "item class Quest")
+    T.eq(State(legendary), "QUESTITEM", "legendary, not equippable")
+    T.eq(State(epic), nil, "epic is nothing special")
+    T.eq(State(plain), nil, "plain item")
+    T.eq(State(legGear), nil, "legendary gear is judged as gear")
+
+    T.check(TipText(questLine):find(L.MARK_QUESTITEM, 1, true), "tooltip: quest item")
+    T.check(TipText(startLine):find(L.MARK_STARTSQUEST, 1, true), "tooltip: starts a quest")
+    T.check(TipText(legendary):find(L.MARK_LEGENDARY, 1, true), "tooltip: legendary")
+    T.check(not TipText(plain):find(L.MARK_QUESTITEM, 1, true), "tooltip: nothing for plain items")
+
+    -- Klassenname: Clientsprache, Englisch als Notanker, nichts anderes
+    T.check(EG:IsQuestType(EG:SplitAliases(L.QUEST_TYPE)[1]), "client-language class name")
+    T.check(EG:IsQuestType("Quest"), "English fallback")
+    T.check(EG:IsQuestType("QUEST"), "case-insensitive")
+    T.check(not EG:IsQuestType("Armor") and not EG:IsQuestType("") and not EG:IsQuestType(nil), "not a quest")
+
+    -- wird er fuer eine Quest gebraucht, gewinnt das Fragezeichen
+    T.setQuestLog({ { title = "Q", objectives = { { desc = questLine and "Needed Thing: 0/1", kind = "item" } } } })
+    local needed = Misc({ name = "Needed Thing", extra = { Line("Quest Item") } })
+    T.fire("QUEST_LOG_UPDATE"); T.runTimers()
+    T.eq(State(needed), "QUESTNEED", "needed beats quest item")
+    EG.db.showQuestNeedIcons = false
+    T.eq(State(needed), "QUESTITEM", "with needed off: quest item")
+    EG.db.showQuestItemIcons = false
+    T.eq(State(needed), nil, "both off")
+end
+
+Cases.marks_prospect_mill = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    local ore  = Misc({ name = "Saronite Ore", extra = { Line("Prospectable") } })
+    local herb = Misc({ name = "Goldclover",   extra = { Line("Millable") } })
+    local both = Misc({ name = "Odd Thing",    extra = { Line("Prospectable"), Line("Millable") } })
+
+    T.eq(State(ore), nil, "no ability: ore unmarked")
+    T.eq(State(herb), nil, "no ability: herb unmarked")
+
+    T.learnSpell(31252)
+    local epoch = EG.epoch
+    T.fire("SPELLS_CHANGED"); T.runTimers()
+    T.check(EG.epoch > epoch, "learning refreshes the markers")
+    T.eq(State(ore), "PROSPECT", "prospecting known")
+    T.eq(State(herb), nil, "milling still unknown")
+    T.eq(State(both), "PROSPECT", "ore wins over herb")
+
+    T.learnSpell(51005)
+    T.fire("LEARNED_SPELL_IN_TAB"); T.runTimers()
+    T.eq(State(herb), "MILL", "milling known")
+
+    -- unveraendertes Zauberbuch: nichts neu bewerten
+    epoch = EG.epoch
+    T.fire("SPELLS_CHANGED"); T.runTimers()
+    T.eq(EG.epoch, epoch, "same spellbook: no refresh")
+
+    -- fuenf Stueck in einem Stapel
+    T.eq(State(ore, 4), nil, "4 are not enough")
+    T.eq(State(ore, 5), "PROSPECT", "5 are")
+    T.eq(State(herb, 1), nil, "1 herb")
+    T.eq(State(herb, 20), "MILL", "20 herbs")
+    T.eq(State(ore, nil), "PROSPECT", "unknown stack size: marked")
+
+    -- die Tasche folgt der Stapelgroesse
+    local b = BagButton("ProspectBag", ore, 4)
+    T.check(b.EGIcon._shown ~= true, "bag: 4 ore")
+    T.bag(0, 1, ore, 5)
+    EG:UpdateBagButton(b, 0, 1)
+    T.check(b.EGIcon._shown == true, "bag: 5 ore")
+    T.eq(b.EGIcon._texture, EG.MARK_BY_STATE.PROSPECT.tex, "bag: prospecting symbol")
+    T.bag(0, 1, ore, 3)
+    EG:UpdateBagButton(b, 0, 1)
+    T.check(b.EGIcon._shown ~= true, "bag: stack shrinks")
+
+    -- Haendler/Beute kennen die Stapelgroesse nicht
+    EG:HookOverlays()
+    _G.MerchantFrame = CreateFrame("Frame", "MerchantFrame"); MerchantFrame.page = 1; MerchantFrame.selectedTab = 1
+    _G.GetMerchantItemLink = function(i) return ({ ore, herb })[i] end
+    local m1 = CreateFrame("Button", "MerchantItem1ItemButton")
+    local m2 = CreateFrame("Button", "MerchantItem2ItemButton")
+    EG:RefreshOverlays()
+    T.eq(m1.EGIcon._texture, EG.MARK_BY_STATE.PROSPECT.tex, "merchant: ore")
+    T.eq(m2.EGIcon._texture, EG.MARK_BY_STATE.MILL.tex, "merchant: herb")
+
+    T.check(TipText(ore):find(L.MARK_PROSPECT, 1, true), "tooltip: prospect")
+    T.check(TipText(herb):find(L.MARK_MILL, 1, true), "tooltip: mill")
+
+    -- einzeln abschaltbar
+    EG.db.showProspectIcons = false
+    T.eq(State(ore, 5), nil, "prospect off")
+    T.eq(State(herb, 5), "MILL", "mill unaffected")
+    EG.db.showMillIcons = false
+    T.eq(State(herb, 5), nil, "mill off")
+end
+
+Cases.marks_ability_names_per_language = function()
+    -- Die Namen kommen aus GetSpellInfo(<ID>), nicht aus dem Code: in deDE heisst
+    -- der Zauber anders, und das Zauberbuch fuehrt diesen Namen.
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    T.learnSpell(31252)
+    EG:ScanAbilities()
+    T.check(EG:KnowsAbility("prospecting"), "prospecting found by its client-language name")
+    T.check(not EG:KnowsAbility("milling"), "milling not known")
+    -- ein Zauber mit anderem Namen taeuscht nichts vor
+    T.world.spells = { 1, 1, 1, 99999 }
+    EG:ScanAbilities()
+    T.check(not EG:KnowsAbility("prospecting"), "forgotten again")
+end
+
+Cases.marks_known_recipe = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    local known   = Recipe({ red = { "Already known" } })
+    local learn   = Recipe()
+    local blocked = Recipe({ red = { "Requires Alchemy (300)" } })
+    local both    = Recipe({ red = { "Already known", "Classes: Priest" } })
+
+    T.eq(State(known), nil, "off by default")
+    T.slash("EASYGEAR", "known on")
+    T.eq(EG.db.showKnownRecipes, true, "switched on")
+    T.eq(State(known), "KNOWN", "known recipe")
+    T.eq(State(both), "KNOWN", "known wins over other red lines")
+    T.eq(State(learn), "RECIPE", "learnable stays a recipe")
+    T.eq(State(blocked), nil, "not learnable and not known: nothing")
+
+    local b = BagButton("KnownBag", known)
+    T.check(b.EGIcon._shown == true, "bag: marked")
+    T.eq(b.EGIcon._texture, EG.MARK_BY_STATE.KNOWN.tex, "bag: coin symbol")
+    T.check(TipText(known):find(L.MARK_KNOWN, 1, true), "tooltip: known")
+    T.check(not TipText(learn):find(L.MARK_KNOWN, 1, true), "tooltip: learnable is not known")
+
+    -- Rezept gelernt: aus "erlernbar" wird "bekannt"
+    local reds = {}
+    local mine = Recipe({ red = reds })
+    T.eq(State(mine), "RECIPE", "learnable first")
+    reds[#reds + 1] = "Already known"
+    T.fire("CHAT_MSG_SYSTEM", "You have learned how to create a new item: Test."); T.runTimers()
+    T.eq(State(mine), "KNOWN", "known after learning")
+
+    T.slash("EASYGEAR", "known off")
+    T.eq(State(known), nil, "off again")
+end
+
+Cases.marks_all_off = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    for _, m in ipairs(EG.MARKS) do EG.db[m.setting] = false end
+    EG.factCache = {}
+    local item = Misc({ extra = { Line("Quest Item") } })
+    T.eq(State(item), nil, "no marker")
+    T.eq(EG:GetMarkTooltipLines(item), nil, "no tooltip lines")
+    T.check(next(EG.factCache) == nil, "no tooltip scan while everything is off")
+    local state, pending = EG:GetMarkState("|cffffffff|Hitem:99998:0:0:0:0:0:0:0:80|h[Unbekannt]|h|r")
+    T.eq(state, nil, "uncached, all off: nothing")
+    T.eq(pending, nil, "uncached, all off: not even pending")
+
+    -- eines an: die Itemdaten werden jetzt gebraucht
+    EG.db.showQuestItemIcons = true
+    state, pending = EG:GetMarkState("|cffffffff|Hitem:99998:0:0:0:0:0:0:0:80|h[Unbekannt]|h|r")
+    T.eq(state, nil, "uncached: no state")
+    T.eq(pending, true, "uncached: pending")
+    T.eq(State(item), "QUESTITEM", "one on")
+end
+
+Cases.marks_gear_unchanged = function()
+    -- Ausruestung bleibt bei Haekchen und Tooltip, auch mit Quest-Zeile
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    T.equip(5, Chest({ [STR] = 100, [STA] = 100 }))
+    local better = Chest({ [STR] = 200, [STA] = 100 }, { extra = { Line("Quest Item") } })
+    T.eq(State(better), nil, "gear gets no extra marker")
+    local b = BagButton("GearBag", better)
+    T.check(b.EGIcon._shown == true, "upgrade marker")
+    T.eq(b.EGIcon._texture, EG.TEX_UPGRADE, "check mark, not a quest symbol")
+    T.check(TipText(better):find(L.UPGRADE, 1, true), "upgrade tooltip")
+end
+
+Cases.marks_commands = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    local function run(m) T.clearChat(); T.slash("EASYGEAR", m); return T.chat() end
+
+    local list = run("marks")
+    for _, m in ipairs(EG.MARKS) do
+        T.check(list:find(L[m.name], 1, true), "list shows " .. m.state)
+        T.check(list:find("/eg " .. m.cmds[1], 1, true), "list shows the command for " .. m.state)
+    end
+    T.check(list:find(L.MARKS_HEADER, 1, true), "list header")
+
+    run("marks prospect off")
+    T.eq(EG.db.showProspectIcons, false, "marks prospect off")
+    T.check(run("marks prospect"):find(L.MK_PROSPECT, 1, true), "reply names the marker")
+    T.eq(EG.db.showProspectIcons, true, "no argument toggles")
+    run("marks PROSPECT off")
+    T.eq(EG.db.showProspectIcons, false, "case-insensitive")
+    run("marks prospect on")
+
+    run("mill off");       T.eq(EG.db.showMillIcons, false, "short form: mill")
+    run("mill on");        T.eq(EG.db.showMillIcons, true,  "short form: mill on")
+    run("needed off");     T.eq(EG.db.showQuestNeedIcons, false, "short form: needed")
+    run("marks questneed on"); T.eq(EG.db.showQuestNeedIcons, true, "alias questneed")
+    run("qitem aus");      T.eq(EG.db.showQuestItemIcons, false, "short form: qitem, German word")
+    run("questitem an");   T.eq(EG.db.showQuestItemIcons, true, "questitem an")
+    run("marks QUESTITEM off"); T.eq(EG.db.showQuestItemIcons, false, "state name")
+    run("known");          T.eq(EG.db.showKnownRecipes, true, "known toggles on")
+    run("marks known 0");  T.eq(EG.db.showKnownRecipes, false, "known 0")
+
+    local before = EG.db.showMillIcons
+    T.check(run("marks nonsense"):find(L.MARKS_HEADER, 1, true), "unknown name: list")
+    T.eq(EG.db.showMillIcons, before, "unknown name changes nothing")
+
+    local status = run("status")
+    T.check(status:find(L.MARKS_STATUS, 1, true), "status has the marker line")
+    for _, m in ipairs(EG.MARKS) do T.check(status:find(L[m.name], 1, true), "status shows " .. m.state) end
+
+    local help = run("help")
+    T.check(help:find("/eg marks", 1, true), "help: marks")
+    T.check(help:find("/eg options", 1, true), "help: options")
+
+    -- /eg reset stellt die Standardwerte her
+    run("known on"); run("mill off")
+    run("reset")
+    T.eq(EG.db.showKnownRecipes, false, "reset: known off")
+    T.eq(EG.db.showMillIcons, true, "reset: mill on")
+end
+
+Cases.options_panel = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+    local O = EG.Options
+    T.check(O and O.panel, "panel exists")
+    T.eq(O.panel.name, "EasyGear", "panel name")
+    local registered = false
+    for _, p in ipairs(T.optionPanels) do if p == O.panel then registered = true end end
+    T.check(registered, "registered with the interface options")
+
+    local boxes, byKey = 0, {}
+    for _, row in ipairs(O.rows) do
+        if row.box then
+            boxes = boxes + 1
+            byKey[row.key] = row
+            T.eq(row.text._text, L[row.label], "label " .. row.key)
+        end
+    end
+    T.eq(boxes, 3 + #EG.MARKS + 2, "one box per switch")
+    for _, m in ipairs(EG.MARKS) do T.check(byKey[m.setting], "box for " .. m.state) end
+    for _, key in ipairs({ "showBagIcons", "showItemIcons", "showQuestIcons", "showTooltip", "tooltipDiff" }) do
+        T.check(byKey[key], "box for " .. key)
+    end
+
+    -- Haken folgen den gespeicherten Werten
+    O:Refresh()
+    for key, row in pairs(byKey) do
+        local want = EG.db[key]
+        if want == nil then want = row.default end
+        T.eq(row.box:GetChecked() and true or false, want and true or false, "initial " .. key)
+    end
+    T.eq(byKey.showKnownRecipes.box:GetChecked() and true or false, false, "known recipes start unchecked")
+
+    -- ein Klick aendert den Wert und die Markierung
+    local learn = Recipe()
+    local b = BagButton("OptionsBag", learn)
+    T.check(b.EGIcon._shown == true, "marked before")
+    byKey.showRecipeIcons.box:SetChecked(false)
+    byKey.showRecipeIcons.box._scripts.OnClick(byKey.showRecipeIcons.box)
+    T.eq(EG.db.showRecipeIcons, false, "click: off")
+    EG:UpdateBagButton(b, 0, 1)
+    T.check(b.EGIcon._shown ~= true, "click: marker gone")
+    byKey.showRecipeIcons.box:SetChecked(true)
+    byKey.showRecipeIcons.box._scripts.OnClick(byKey.showRecipeIcons.box)
+    T.eq(EG.db.showRecipeIcons, true, "click: on")
+
+    -- und der Befehl stellt die Haken nach
+    T.slash("EASYGEAR", "marks mill off")
+    T.eq(byKey.showMillIcons.box:GetChecked() and true or false, false, "command updates the box")
+    T.slash("EASYGEAR", "icons")
+    T.eq(byKey.showBagIcons.box:GetChecked() and true or false, false, "toggle command updates the box")
+    T.slash("EASYGEAR", "icons")
+
+    -- /eg options oeffnet die Seite
+    local opened = T.optionOpened
+    T.slash("EASYGEAR", "options")
+    T.check(T.optionOpened > opened, "options command opens the page")
+    T.eq(T.optionTarget, O.panel, "...the right one")
+    T.slash("EASYGEAR", "settings")
+    T.slash("EASYGEAR", "config")
+end
+
+
+Cases.marks_scan_edge_cases = function()
+    Setup("WARRIOR", 80, { 31, 0, 0 })
+
+    -- "Bereits bekannt" zaehlt in jeder Farbe, nicht nur in Rot
+    local knownWhite = Recipe({ extra = { Line("Already known", "white") } })
+    T.eq(EG:GetRecipeState(knownWhite), nil, "already known, white line: not learnable")
+    EG.db.showKnownRecipes = true
+    T.eq(State(knownWhite), "KNOWN", "already known, white line: known")
+    EG.db.showKnownRecipes = false
+
+    -- ein Scan-Tooltip, der leer bleibt, wird nur begrenzt oft wiederholt
+    local item = Misc({ name = "Mystery", extra = { Line("Quest Item") } })
+    local orig = EG.SetScanTip
+    EG.SetScanTip = function() return false end
+    local f1, p1 = EG:GetItemFacts(item)
+    local f2, p2 = EG:GetItemFacts(item)
+    T.check(f1 == nil and p1 == true and f2 == nil and p2 == true, "first tries: pending")
+    local f3, p3 = EG:GetItemFacts(item)
+    T.check(f3 ~= nil and p3 == nil, "then it settles without tooltip data")
+    T.eq(f3.questItem, nil, "...and claims nothing it did not see")
+    EG.SetScanTip = orig
+    T.eq(EG:GetItemFacts(item), f3, "cached")
+    EG:InvalidateFacts()
+    T.eq(EG:GetItemFacts(item).questItem, true, "a later scan sees the tooltip")
+    T.eq(next(EG.factRetries), nil, "retry counters cleared")
+
+    -- Ruf: das Rezept war gesperrt, jetzt nicht mehr
+    local reds = { "Requires Honor Hold - Friendly" }
+    local rep = Recipe({ red = reds })
+    T.eq(EG:GetRecipeState(rep), nil, "locked by reputation")
+    reds[1] = nil
+    local epoch = EG.epoch
+    T.fire("UPDATE_FACTION"); T.runTimers()
+    T.check(EG.epoch > epoch, "reputation change re-evaluates")
+    T.eq(EG:GetRecipeState(rep), "RECIPE", "learnable after the reputation rank")
+    epoch = EG.epoch
+    T.fire("UPDATE_FACTION"); T.runTimers()
+    T.eq(EG.epoch, epoch, "nothing locked left: nothing to do")
+
+    -- ein neuer Zauber (gelerntes Rezept) liest alles neu, ohne dass der Chattext zaehlt
+    local mine = Recipe({ red = reds })
+    T.eq(EG:GetRecipeState(mine), "RECIPE", "learnable")
+    reds[#reds + 1] = "Already known"
+    T.eq(EG:GetRecipeState(mine), "RECIPE", "still cached")
+    T.learnSpell(12345)
+    T.fire("SPELLS_CHANGED"); T.runTimers()
+    T.eq(EG:GetRecipeState(mine), nil, "known after the spell appeared")
 end
 
 return Cases
