@@ -27,7 +27,9 @@ Locales\zhTW.lang.lua
 EasyGear.lua
 EasyGearSpecs.lua
 EasyGearHeirlooms.lua
+EasyGearMarks.lua
 EasyGearOverlays.lua
 EasyGearEGUP.lua
 EasyGearGUI.lua
 EasyGearProfileGUI.lua
+EasyGearOptions.lua

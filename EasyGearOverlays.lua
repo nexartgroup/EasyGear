@@ -1,5 +1,5 @@
 --[[---------------------------------------------------------------------------
-    EasyGear 3.0.0 - Markierungen
+    EasyGear 3.1.0 - Markierungen
 
     Ein gruenes Haekchen am Item bedeutet "besser als das, was du traegst",
     ein gelbes "waere besser, aber deine Stufe reicht noch nicht". Gezeigt wird
@@ -13,7 +13,8 @@
       Post       Postfach (erster Anhang)
 
     Die Bewertung selbst kommt aus EG:GetUpgradeState() im Kern; hier wird nur
-    angezeigt.
+    angezeigt. Ist kein Upgrade im Spiel, zeigt dasselbe Symbol die Markierungen
+    aus EasyGearMarks.lua (Quest, Rezept, Sondieren, Mahlen).
 -----------------------------------------------------------------------------]]
 
 local EG = EasyGear
@@ -23,10 +24,9 @@ local L     = EG.L
 local COLOR = EG.COLOR
 
 local TEX_UPGRADE = EG.TEX_UPGRADE
-local TEX_RECIPE  = EG.TEX_RECIPE
 local DEFAULT_ICON_SIZE = 20
 
-local pairs, ipairs, type, tonumber, pcall = pairs, ipairs, type, tonumber, pcall
+local pairs, ipairs, type, tonumber, pcall, select = pairs, ipairs, type, tonumber, pcall, select
 
 ------------------------------------------------------------------------------
 -- 12  Markierung an einem Button
@@ -47,12 +47,14 @@ end
 
 --[[ state:  "UPGRADE"  gruen  - echtes Upgrade
              "LEVEL"    gelb   - Upgrade, aber Charakterstufe zu niedrig
-             "RECIPE"   Buch   - erlernbares, noch nicht bekanntes Rezept
+             sonst ein Zustand aus EG.MARKS (EasyGearMarks.lua): Quest, Rezept,
+             Sondieren, Mahlen ... Das Symbol steht dort.
              nil               - kein Icon
 
      Das Icon ist an jedem Button dasselbe Textur-Objekt und wird wiederverwendet:
-     der Ausschnitt muss deshalb bei jedem Zustand gesetzt werden.            ]]
+     Textur, Ausschnitt und Farbe muessen deshalb bei jedem Zustand gesetzt werden. ]]
 function EG:ApplyIconState(icon, state)
+    local mark = state and self.MARK_BY_STATE and self.MARK_BY_STATE[state]
     if state == "UPGRADE" then
         icon:SetTexture(TEX_UPGRADE)
         icon:SetTexCoord(0, 1, 0, 1)
@@ -63,9 +65,9 @@ function EG:ApplyIconState(icon, state)
         icon:SetTexCoord(0, 1, 0, 1)
         icon:SetVertexColor(1, 0.85, 0)
         icon:Show()
-    elseif state == "RECIPE" then
-        icon:SetTexture(TEX_RECIPE)
-        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)    -- ohne den Rand des Symbols
+    elseif mark then
+        icon:SetTexture(mark.tex)
+        icon:SetTexCoord(mark.coords[1], mark.coords[2], mark.coords[3], mark.coords[4])
         icon:SetVertexColor(1, 1, 1)
         icon:Show()
     else
@@ -73,13 +75,15 @@ function EG:ApplyIconState(icon, state)
     end
 end
 
---[[ Zustand eines Items fuer die Markierung: Upgrade zuerst, sonst Rezept.
-     Zweiter Rueckgabewert: true, wenn die Itemdaten noch nicht im Client liegen. ]]
-function EG:GetMarkerState(link)
+--[[ Zustand eines Items fuer die Markierung: Upgrade zuerst, sonst die
+     Markierungen aus EasyGearMarks.lua. count ist die Stapelgroesse, wo sie
+     bekannt ist (Taschen). Zweiter Rueckgabewert: true, wenn die Itemdaten noch
+     nicht im Client liegen.                                                   ]]
+function EG:GetMarkerState(link, count)
     local state, pending = self:GetUpgradeState(link)
     if pending then return nil, true end
     if state then return state end
-    return self:GetRecipeState(link)
+    return self:GetMarkState(link, count)
 end
 
 --[[ Aktualisiert das Icon eines Taschen-Buttons.                          ]]
@@ -94,16 +98,18 @@ function EG:UpdateBagButton(button, bagID, slotID)
     slotID = tonumber(slotID)
     if not bagID or not slotID then return end
 
-    local link = GetContainerItemLink(bagID, slotID)
-    local sig  = self.epoch or 0
+    local link  = GetContainerItemLink(bagID, slotID)
+    local sig   = self.epoch or 0
+    local count = link and select(2, GetContainerItemInfo(bagID, slotID)) or nil
 
-    -- Nur neu rechnen, wenn sich Inhalt, Profil, Ausruestung oder
+    -- Nur neu rechnen, wenn sich Inhalt, Stapelgroesse, Profil, Ausruestung oder
     -- Einstellungen geaendert haben (alles erhoeht die Epoche)
-    if button.EGLink == link and button.EGSig == sig then
+    if button.EGLink == link and button.EGSig == sig and button.EGCount == count then
         return
     end
-    button.EGLink = link
-    button.EGSig  = sig
+    button.EGLink  = link
+    button.EGSig   = sig
+    button.EGCount = count
 
     local icon = self:CreateUpgradeIcon(button)
 
@@ -112,7 +118,7 @@ function EG:UpdateBagButton(button, bagID, slotID)
         return
     end
 
-    local state, pending = self:GetMarkerState(link)
+    local state, pending = self:GetMarkerState(link, count)
     if pending then
         -- Item noch nicht im Client-Cache: Markierung loeschen und
         -- gleich noch einmal versuchen
