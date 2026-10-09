@@ -33,6 +33,7 @@ vendors, loot windows, loot rolls, trade, auction house, mail and every item too
 - [Settings](#settings)
 - [Tests](#tests)
 - [Known limits](#known-limits)
+- [Changes in 3.1](#changes-in-31)
 - [Changes in 3.0](#changes-in-30)
 
 ---
@@ -85,6 +86,7 @@ The `tests/` folder is only for development and may be left out.
 | `/eg ilvl <number>` · `ilvlscale [on\|off]` | item level weight / scale it with character level |
 | `/eg mindelta <number>` · `mindeltapct <percent>` | minimum gain to call something an upgrade |
 | `/eg icons` · `quest` · `items` · `tooltip` · `diff` | toggle bag markers / quest markers / vendor-loot-AH markers / tooltip lines / stat differences |
+| `/eg recipes [on\|off]` | mark **recipes you can learn** and do not know yet (default on) |
 | `/eg scale <0.5–2.0>` | window scale |
 | `/eg status` | current settings |
 | `/eg locale` | which language file is active, how armor/weapon types were recognised |
@@ -126,6 +128,25 @@ UPGRADE  +34  (+9.0%)
 
 On the character sheet and in compare-tooltips only the score is shown — comparing an item
 with itself is meaningless.
+
+### Learnable recipes
+
+A **book symbol** on the item icon marks a recipe you can learn **right now** and have not
+learned yet. It appears in the same places as the upgrade check (bags, bank, vendors, loot
+windows and rolls, trade, auction house, mail) and the tooltip adds *"Recipe: you can learn
+this now"*. Switch it off with `/eg recipes off`; `showRecipeIcons` in the settings.
+
+EasyGear does not look at your professions or skill levels. It reads the tooltip, which the
+client already colours for exactly this question: a recipe is marked when it is an item of
+class *Recipe* and the tooltip has **no red line** other than the level requirement.
+Red means *Requires Alchemy (300)* (no profession or skill too low), *Already known*, or a
+class/race/reputation restriction. Consequently a recipe you already know, one for a profession
+you do not have and one that needs a higher skill are never marked. The level requirement is
+checked against your character level. After you learn a recipe, a skill goes up or you
+level, the markers update on their own.
+
+The recipe class is recognised through the client's own item class name (language file key
+`RECIPE_TYPE`, English as fallback). Quest rewards are not marked.
 
 Quest rewards are ranked by **gain**, not by absolute score, so a boot that fills an empty
 slot beats a cloak that merely replaces a slightly worse one. If no reward is an upgrade,
@@ -509,6 +530,7 @@ Stored in `EasyGearDB` (account-wide) and `EasyGearCharDB` (per character).
 | `protectHeirlooms` | `true` | prefer heirlooms while levelling |
 | `heirloomBonus` | `1.5` | heirloom score factor (up to level 60) |
 | `showBagIcons` · `showQuestIcons` · `showItemIcons` | `true` | markers: bags / quests / vendor-loot-roll-trade-AH-mail |
+| `showRecipeIcons` | `true` | mark learnable, not yet known recipes (needs the bag / vendor-loot markers above) |
 | `showTooltip` · `showTooltipStats` · `tooltipDiff` | `true` | tooltip lines / slot line / stat differences |
 | `iconSize` | `20` | marker size in pixels |
 | `egupCommand` · `egupConfirm` · `egupDelay` | see above | GM command template / confirmations / pause between commands |
@@ -553,6 +575,16 @@ documented for 3.3.5a, not the real client.
   attribute of each heirloom in the table is an assumption** that `/egup verify` cross-checks
   against the client — run it once on your server.
 * On heavily customised cores item IDs and the `.additem` syntax may differ.
+
+---
+
+## Changes in 3.1
+
+* **Learnable recipes are marked** (book symbol and tooltip line) wherever EasyGear shows
+  markers, unless you already know them or cannot learn them yet. On by default,
+  `/eg recipes off` disables it.
+* New language-file keys `RECIPE_TYPE`, `RECIPE_LEARNABLE`, `SET_RECIPES`, `ST_RECIPES`,
+  `H_RECIPES` in all eight languages.
 
 ---
 
@@ -636,6 +668,7 @@ Den Ordner `EasyGear` nach `Interface/AddOns/` kopieren (Dateiliste siehe oben),
 | `/eg ilvl <zahl>` · `ilvlscale [on\|off]` | Gewicht der Gegenstandsstufe / Skalierung mit der Charakterstufe |
 | `/eg mindelta <zahl>` · `mindeltapct <prozent>` | Mindestvorsprung für „Verbesserung“ |
 | `/eg icons` · `quest` · `items` · `tooltip` · `diff` | Markierungen Taschen / Quests / Händler-Beute-AH, Tooltipzeilen, Attribut-Differenzen ein-/ausschalten |
+| `/eg recipes [on\|off]` | **erlernbare Rezepte** markieren, die du noch nicht kennst (Standard an) |
 | `/eg scale <0.5–2.0>` | Fenstergröße |
 | `/eg status` | aktuelle Einstellungen |
 | `/eg locale` | welche Sprachdatei aktiv ist, wie Rüstungs-/Waffentypen erkannt wurden |
@@ -666,6 +699,27 @@ Der Tooltip ergänzt Wertung, Slot und Wertung des ersetzten Items, das Urteil m
 absolutem und relativem Zugewinn und — wie bei RatingBuster — die **Attribut-Differenzen**
 zum ersetzten Item. Auf dem Charakterfenster und in Vergleichstooltips steht nur die
 Wertung: ein Item mit sich selbst zu vergleichen ergibt keinen Sinn.
+
+### Erlernbare Rezepte
+
+Ein **Buchsymbol** am Item-Symbol zeigt ein Rezept, das du **jetzt** lernen kannst und noch
+nicht gelernt hast. Es erscheint an denselben Stellen wie das Upgrade-Häkchen (Taschen, Bank,
+Händler, Beute- und Würfelfenster, Handel, Auktionshaus, Post), und der Tooltip ergänzt
+*„Rezept: kann jetzt erlernt werden“*. Abschalten mit `/eg recipes off`; Schlüssel
+`showRecipeIcons` in den Einstellungen.
+
+EasyGear schaut dafür nicht in deine Berufe oder Fertigkeitsstufen, sondern in den Tooltip,
+den der Client für genau diese Frage schon einfärbt: Ein Rezept wird markiert, wenn es ein
+Item der Klasse *Rezept* ist und der Tooltip **keine rote Zeile** außer der Stufenanforderung
+hat. Rot ist *Erfordert Alchemie (300)* (Beruf fehlt oder Fertigkeit zu niedrig), *Bereits
+bekannt* oder eine Einschränkung nach Klasse, Volk oder Ruf. Ein schon bekanntes Rezept, eines
+für einen Beruf, den du nicht hast, und eines, das mehr Fertigkeit braucht, bekommen deshalb nie
+eine Markierung. Die Stufenanforderung wird gegen deine Charakterstufe geprüft. Lernst du ein
+Rezept, steigt eine Fertigkeit oder eine Stufe, ziehen die Markierungen von selbst nach.
+
+Die Rezeptklasse erkennt EasyGear am Klassennamen, den der Client liefert
+(Sprachdatei-Schlüssel `RECIPE_TYPE`, Englisch als Notanker). Questbelohnungen werden nicht
+markiert.
 
 Questbelohnungen werden nach **Zugewinn** gewertet, nicht nach absoluter Wertung: Stiefel,
 die einen leeren Slot füllen, schlagen einen Umhang, der nur einen etwas schlechteren
@@ -1031,6 +1085,16 @@ nach Dokumentation für 3.3.5a nach, nicht den echten Client.
   Erbstücks in der Tabelle ist eine Annahme**, die `/egup verify` gegen den Client gegenprüft —
   einmal auf deinem Server ausführen.
 * Bei stark abweichenden Custom-Cores können Item-IDs und die `.additem`-Syntax abweichen.
+
+---
+
+## Änderungen in 3.1
+
+* **Erlernbare Rezepte werden markiert** (Buchsymbol und Tooltip-Zeile), überall dort, wo
+  EasyGear Markierungen zeigt -- außer bei bereits bekannten oder noch nicht erlernbaren.
+  Standardmäßig an, `/eg recipes off` schaltet es ab.
+* Neue Sprachdatei-Schlüssel `RECIPE_TYPE`, `RECIPE_LEARNABLE`, `SET_RECIPES`, `ST_RECIPES`,
+  `H_RECIPES` in allen acht Sprachen.
 
 ---
 
