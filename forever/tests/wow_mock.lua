@@ -351,6 +351,7 @@ function Mock.new(opts)
     }
     env.GetLocale = function() return opts.locale or "enUS" end
     env.GetBuildInfo = function() return "1.60.1", "70862", "Nov  7 2026", 16001 end
+    env.GetTime = function() return self.now end
     env.UnitClass = function() return player.class:sub(1, 1) .. player.class:sub(2):lower(), player.class, player.classID end
     env.UnitLevel = function() return player.level end
     env.GetMaxPlayerLevel = function() return player.maxLevel end
@@ -441,7 +442,7 @@ function Mock.new(opts)
             local it, id = itemFromAny(linkOrId)
             if not it then return nil end
             if it.uncached then return nil end
-            return it.name, it.link, it.quality or 1, it.ilvl or 1, it.minLevel or 0, it.type or "Armor",
+            return it.name, it.reportedLink or it.link, it.quality or 1, it.ilvl or 1, it.minLevel or 0, it.type or "Armor",
                    it.subType or "Plate", 1, it.equipLoc or "", it.texture or 100000 + id, it.sellPrice or 0,
                    it.classID or 4, it.subclassID or 0, 1
         end,

@@ -215,6 +215,16 @@ local DEFAULTS = {
 }
 EG.DEFAULTS = DEFAULTS
 
+--[[ Wertebereiche der Zahleneinstellungen. Die Regler der Einstellungsseite und die Chatbefehle benutzen dieselben:
+     ein Wert ausserhalb des Reglers wuerde bei offener Seite vom Regler stillschweigend zurechtgestutzt. ]]
+EG.RANGES = {
+    ilvlWeight      = { 0, 2 },
+    minDeltaPercent = { 0, 10 },
+    minDelta        = { 0, 1000 },
+    socketValue     = { 0, 1000 },
+    scale           = { 0.5, 2.0 },
+}
+
 local CHAR_DEFAULTS = {
     profile = "AUTO",           -- Profil-ID oder "AUTO" (Talenterkennung)
     gui     = { point = "CENTER", x = 0, y = 0, scale = 1.0 },

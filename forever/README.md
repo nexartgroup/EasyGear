@@ -85,12 +85,12 @@ on the right, both applied to the gear you are wearing. See [Profiles](#profiles
 | `/eg weight <stat> <value>` | set a weight in your active *own* profile (`/eg weight CRIT 0.8`) |
 | `/eg autolevel [on\|off]` | below the maximum level use the Leveling profile of your class |
 | `/eg enchants [on\|off]` | count enchants, gems and active socket bonuses |
-| `/eg socket <number\|auto>` | points per empty socket (auto: from level and profile) |
-| `/eg ilvl <number>` / `/eg ilvlscale [on\|off]` | item level weight / scale it with your level |
-| `/eg mindelta <number>` / `/eg mindeltapct <percent>` | minimum gain for "upgrade" (absolute / relative) |
+| `/eg socket <0-1000\|auto>` | points per empty socket (auto: from level and profile) |
+| `/eg ilvl <0-2>` / `/eg ilvlscale [on\|off]` | item level weight / scale it with your level |
+| `/eg mindelta <0-1000>` / `/eg mindeltapct <0-10>` | minimum gain for "upgrade" (absolute points / percent) |
 | `/eg icons \| items \| quest \| char \| tooltip \| stats \| diff` | switch marker groups and tooltip parts on or off |
 | `/eg options` | open the settings page |
-| `/eg scale <0.5-2.0>` | window scale |
+| `/eg scale <0.5-2>` | window scale |
 | `/eg status` | profile, detected talent points, settings, state of every interface hook |
 | `/eg parse <item link>` | what was read from an item (base values, extras, unknown stats) |
 | `/eg unknown` | item stats in your gear and bags that the addon does not know |
@@ -179,7 +179,7 @@ Run from this folder (`forever/`):
 
 ```
 lua5.1 tests/run.lua                 # unit tests on a model of the client (Lua 5.1 only), ~240 checks
-python3 tests/mutate.py              # mutation check: breaks the addon in ~130 small ways, the tests must notice
+python3 tests/mutate.py              # mutation check: breaks the addon in ~140 small ways, the tests must notice
 tools/check.sh <Interface/AddOns of the Forever UI source>
                                      # luacheck against a std built from the UI source + checks that every
                                      # method, event, template, font, atlas and global the addon names exists

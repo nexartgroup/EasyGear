@@ -366,8 +366,8 @@ return function(T)
         local f = W.env.EasyGearWindow
         T.eq(f.cand.name:GetText(), W.EG.L.ITEM_LOADING)
         W.fire("GET_ITEM_INFO_RECEIVED", 88888, false)
-        W.EG.Window.Refresh()
-        T.eq(f.cand.name:GetText(), W.EG.L.INVALID_ITEM)
+        W.flush()
+        T.eq(f.cand.name:GetText(), W.EG.L.INVALID_ITEM, "the window follows without being touched")
     end)
 
     T.test("window: only items are accepted - numbers, item strings and links, not spells or junk", function()

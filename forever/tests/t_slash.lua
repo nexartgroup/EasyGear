@@ -226,9 +226,9 @@ return function(T)
     T.test("slash: numbers outside their range or not numbers are refused with a hint", function()
         local W = world()
         for _, def in ipairs({
-            { "ilvl", "ilvlWeight", { "-1", "11", "abc", "nan", "inf", "-inf" }, "0 to 10" },
+            { "ilvl", "ilvlWeight", { "-1", "2.5", "11", "abc", "nan", "inf", "-inf" }, "0 to 2" },
             { "mindelta", "minDelta", { "-1", "1001", "abc", "inf" }, "0 to 1000" },
-            { "mindeltapct", "minDeltaPercent", { "-1", "101", "abc" }, "0 to 100" },
+            { "mindeltapct", "minDeltaPercent", { "-1", "10.5", "101", "abc" }, "0 to 10" },
             { "socket", "socketValue", { "-1", "1001", "abc" }, "0 to 1000" },
         }) do
             local before = W.EG:Get(def[2])
@@ -242,8 +242,8 @@ return function(T)
         T.has(say(W, "scale 3"), "Please enter a number from 0.5 to 2")
         T.eq(W.env.EasyGearCharDB.gui.scale, 1)
         T.hasnt(say(W, "ilvl 0"), "Please enter") T.eq(W.EG:Get("ilvlWeight"), 0, "the limits themselves are valid")
-        say(W, "ilvl 10") T.eq(W.EG:Get("ilvlWeight"), 10)
-        say(W, "mindeltapct 100") T.eq(W.EG:Get("minDeltaPercent"), 100)
+        say(W, "ilvl 2") T.eq(W.EG:Get("ilvlWeight"), 2)
+        say(W, "mindeltapct 10") T.eq(W.EG:Get("minDeltaPercent"), 10)
         say(W, "socket 0") T.eq(W.EG:Get("socketValue"), 0)
         say(W, "socket 1,5") T.eq(W.EG:Get("socketValue"), 1.5, "a decimal comma works")
     end)

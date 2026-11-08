@@ -19,6 +19,8 @@ local sformat = string.format
 
 local category
 local variables = {}                -- Namen aller registrierten Einstellungen der Seite
+local readers = {}                  -- Name -> Funktion, die den heutigen Wert liefert
+local shown = {}                    -- Name -> der Wert, den die Seite zuletzt kennt
 local notifying = false             -- die Seite wird gerade ueber einen Wert informiert, der von aussen kam
 
 ------------------------------------------------------------------------------
@@ -42,39 +44,52 @@ Options.CHECKS = {
     { key = "ilvlScaling",      name = "OPT_ILVLSCALE",    tip = "OPT_ILVLSCALE_TIP" },
 }
 
--- Regler: Schluessel, Bereich schrittweise, Anzeigeformat
+-- Regler: Schluessel, Schrittweite, Anzeigeformat; der Bereich steht in EG.RANGES (gilt auch fuer die Chatbefehle)
 Options.SLIDERS = {
-    { key = "ilvlWeight",      name = "OPT_ILVL",      tip = "OPT_ILVL_TIP",      min = 0, max = 2,  step = 0.05, fmt = "%.2f" },
-    { key = "minDeltaPercent", name = "OPT_MINDELTA",  tip = "OPT_MINDELTA_TIP",  min = 0, max = 10, step = 0.5,  fmt = "%.1f %%" },
+    { key = "ilvlWeight",      name = "OPT_ILVL",      tip = "OPT_ILVL_TIP",      step = 0.05, fmt = "%.2f" },
+    { key = "minDeltaPercent", name = "OPT_MINDELTA",  tip = "OPT_MINDELTA_TIP",  step = 0.5,  fmt = "%.1f %%" },
 }
 
 ------------------------------------------------------------------------------
 -- 02  Seite aufbauen
 ------------------------------------------------------------------------------
 
--- Eine Einstellung der Seite hat sich geaendert. Waehrend die Seite nur nachgezogen wird (siehe unten) ist es kein
--- neuer Wert, und die Auswertung darf nicht noch einmal anlaufen.
-local function Changed()
-    if notifying then return end
-    EG:InvalidateAll()
+-- Einstellung vormerken: ihr Name, wie man den heutigen Wert liest, und der Wert, den die Seite jetzt zeigt
+local function Track(variable, read)
+    variables[#variables + 1] = variable
+    readers[variable] = read
+    shown[variable] = read()
+end
+
+-- Rueckruf einer Einstellung der Seite. Der Wert ist der der Seite; waehrend die Seite nur nachgezogen wird (siehe
+-- unten) ist es kein neuer Wert, und die Auswertung darf nicht noch einmal anlaufen.
+local function ChangedFor(variable)
+    return EG:Guard("settings", function(_, value)
+        shown[variable] = value
+        if notifying then return end
+        EG:InvalidateAll()
+    end)
 end
 
 local function AddCheck(cat, def)
     local default = EG.DEFAULTS[def.key]
-    local setting = Settings.RegisterAddOnSetting(cat, "EasyGear_" .. def.key, def.key, EG.db,
+    local variable = "EasyGear_" .. def.key
+    local setting = Settings.RegisterAddOnSetting(cat, variable, def.key, EG.db,
         Settings.VarType.Boolean, L[def.name], default)
-    variables[#variables + 1] = "EasyGear_" .. def.key
-    setting:SetValueChangedCallback(EG:Guard("settings", Changed))
+    Track(variable, function() return EG:Get(def.key) end)
+    setting:SetValueChangedCallback(ChangedFor(variable))
     Settings.CreateCheckbox(cat, setting, L[def.tip])
 end
 
 local function AddSlider(cat, def)
     local default = EG.DEFAULTS[def.key]
-    local setting = Settings.RegisterAddOnSetting(cat, "EasyGear_" .. def.key, def.key, EG.db,
+    local variable = "EasyGear_" .. def.key
+    local setting = Settings.RegisterAddOnSetting(cat, variable, def.key, EG.db,
         Settings.VarType.Number, L[def.name], default)
-    variables[#variables + 1] = "EasyGear_" .. def.key
-    setting:SetValueChangedCallback(EG:Guard("settings", Changed))
-    local options = Settings.CreateSliderOptions(def.min, def.max, def.step)
+    Track(variable, function() return EG:Get(def.key) end)
+    setting:SetValueChangedCallback(ChangedFor(variable))
+    local range = EG.RANGES[def.key]
+    local options = Settings.CreateSliderOptions(range[1], range[2], def.step)
     if options.SetLabelFormatter and MinimalSliderWithSteppersMixin then
         options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
             return sformat(def.fmt, v)
@@ -85,10 +100,13 @@ end
 
 local function AddProfileDropdown(cat)
     local function GetValue() return Profiles.ActiveID() end
-    local function SetValue(value) Profiles.SetActive(value) end
+    local function SetValue(value)
+        shown["EasyGear_PROFILE"] = value               -- die Seite hat den Wert selbst gewaehlt
+        Profiles.SetActive(value)
+    end
     local setting = Settings.RegisterProxySetting(cat, "EasyGear_PROFILE", Settings.VarType.String,
         L.OPT_PROFILE, "AUTO", GetValue, SetValue)
-    variables[#variables + 1] = "EasyGear_PROFILE"
+    Track("EasyGear_PROFILE", GetValue)
     local function GetOptions()
         local container = Settings.CreateControlTextContainer()
         container:Add("AUTO", L.OPT_PROFILE_AUTO)
@@ -167,17 +185,38 @@ function Options.Open()
 end
 
 --[[ Einstellungen und Profil koennen auch ausserhalb der Seite wechseln (Chatbefehle, Profilfenster, Zuruecksetzen):
-     die Felder der offenen Seite nachziehen. NotifyUpdate loest die Rueckrufe der Einstellungen aus, deshalb sperrt
-     `notifying` die Auswertung in Changed. Ist die Seite zu, liest sie beim Oeffnen ohnehin alles neu.        ]]
+     die Felder der offenen Seite nachziehen - aber nur die, deren Wert sich wirklich geaendert hat. NotifyUpdate
+     laesst das Eingabefeld seinen Wert neu setzen (ein Kontrollkaestchen klickt dabei hoerbar) und die Seite sich neu
+     aufbauen; es gehoert nicht an jede Auswertung. Es loest auch die Rueckrufe der Einstellungen aus, deshalb sperrt
+     `notifying` die Auswertung in ChangedFor. Ist die Seite zu, liest sie beim Oeffnen ohnehin alles neu.      ]]
 EG:Listen("INVALIDATED", function()
     if notifying or not (category and Settings and Settings.NotifyUpdate) then return end
     local panel = _G.SettingsPanel
     if type(panel) == "table" and type(panel.IsShown) == "function" and not panel:IsShown() then return end
-    notifying = true
+
+    local stale = {}
     for _, variable in ipairs(variables) do
+        if readers[variable]() ~= shown[variable] then stale[#stale + 1] = variable end
+    end
+    if #stale == 0 then return end
+
+    local before = {}
+    notifying = true
+    for _, variable in ipairs(stale) do
+        before[variable] = readers[variable]()
+        shown[variable] = before[variable]
         pcall(Settings.NotifyUpdate, variable)
     end
     notifying = false
+
+    -- Ein Eingabefeld darf den Wert dabei angepasst haben (ein Regler rastet auf seine Schrittweite ein): dann gilt
+    -- der neue Wert, und er wird ausgewertet
+    for _, variable in ipairs(stale) do
+        if readers[variable]() ~= before[variable] then
+            EG:InvalidateAll()
+            break
+        end
+    end
 end)
 
 EG:OnLoad("options", function()

@@ -74,9 +74,12 @@ end
 
 local cache, cacheCount = {}, 0
 local requested = {}                -- itemID -> true: Laden ist angestossen
-local failed = {}                   -- itemID -> true: der Client kennt den Gegenstand nicht (nicht erneut fragen)
+local failed = {}                   -- itemID -> Zeitpunkt: der Client kennt den Gegenstand nicht (eine Weile nicht erneut fragen)
+local FAILED_RETRY = 60               -- Sekunden; ein Fehlschlag kann auch eine Zeitueberschreitung gewesen sein
 local partialTries = {}             -- Schluessel -> Versuche, bei denen die Tooltip-Daten noch fehlten
 local MAX_PARTIAL_TRIES = 3
+
+local function Now() return GetTime and GetTime() or 0 end
 
 local function Request(id)
     if id and not requested[id] and C_Item and C_Item.RequestLoadItemDataByID then
@@ -133,7 +136,8 @@ function Items.Get(linkOrID)
           sellPrice, classID, subclassID, bindType = GetInfo(key)
 
     if not name or not ilvl then
-        if id and failed[id] then return nil, "invalid" end
+        local when = id and failed[id]
+        if when and Now() - when < FAILED_RETRY then return nil, "invalid" end
         Request(id)
         return nil, id and "loading" or "invalid"
     end
@@ -249,10 +253,13 @@ end
 EG:On("GET_ITEM_INFO_RECEIVED", function(_, id, success)
     if id then requested[id] = nil end
     if success == false then
-        -- Der Client kennt den Gegenstand nicht: nicht noch einmal fragen, nichts neu berechnen lassen
-        if id then failed[id] = true end
+        -- Der Client kennt den Gegenstand nicht: eine Weile nicht noch einmal fragen und nichts neu berechnen, aber
+        -- die Anzeigen aktualisieren, die auf ihn warten ("ungueltig" statt "wird geladen")
+        if id then failed[id] = Now() end
+        EG:Debounce("itemsFailed", 0.25, function() EG:Fire("REFRESH") end)
         return
     end
+    if id then failed[id] = nil end
     EG:Debounce("itemsLoaded", 0.25, function() EG:Fire("ITEMS_LOADED") end)
 end)
 

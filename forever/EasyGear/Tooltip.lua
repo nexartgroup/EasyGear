@@ -175,13 +175,25 @@ local function IsShoppingTooltip(tooltip)
     return type(name) == "string" and smatch(name, "ShoppingTooltip%d$") ~= nil
 end
 
--- In welchem Platz ist dieser Gegenstand angelegt? (Vergleichs-Tooltips zeigen angelegte Gegenstaende)
+-- Der Teil eines Links, der den Gegenstand festlegt ("item:1234:0:..."), ohne Farbe und Namen
+local function ItemString(link)
+    return type(link) == "string" and smatch(link, "item:[%-%d:]*") or nil
+end
+
+--[[ In welchem Platz ist dieser Gegenstand angelegt? (Vergleichs-Tooltips zeigen angelegte Gegenstaende.)
+     Der Link aus GetItemInfo muss dem aus GetInventoryItemLink nicht Zeichen fuer Zeichen gleichen: darum gilt auch
+     der Gegenstandsteil des Links, und zuletzt die Gegenstandsnummer.                                       ]]
 local function WornSlotOf(item)
     local slots = Score.EQUIP_LOC_SLOTS[item.equipLoc]
+    local want, byId = ItemString(item.link), nil
     for _, slot in ipairs(slots or {}) do
-        if item.link and Items.EquippedLink(slot) == item.link then return slot end
+        local worn = Items.EquippedLink(slot)
+        if worn then
+            if worn == item.link or (want and ItemString(worn) == want) then return slot end
+            if item.id and Items.IDFromLink(worn) == item.id then byId = byId or slot end
+        end
     end
-    return nil
+    return byId
 end
 
 local function LinkOf(tooltip, data)

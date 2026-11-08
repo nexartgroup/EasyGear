@@ -230,4 +230,49 @@ return function(T)
         local tip = W.tooltipFor(W.bagButton(0, 1), twin)
         T.has(tip:Dump(), "+5.0 Weapon DPS", "10 against 5, not 20 against 5")
     end)
+
+    T.test("tooltip: the worn slot is found even when GetItemInfo spells the link differently", function()
+        local W = world(function(w)
+            w.I.offsword = F.gear(w, 6002, "Worn Off Sword", "INVTYPE_WEAPON", 30, {}, { dps = 20 })
+            w.equip(17, w.I.offsword)
+        end)
+        local function compareTip()
+            W.EG.Items.Wipe()
+            local shop = W.env.ShoppingTooltip1
+            shop:SetOwner(W.env.GameTooltip, "ANCHOR_NONE")
+            W.env.__showItem(shop, W.I.offsword)
+            return shop:Dump()
+        end
+        T.has(compareTip(), "Score: 95", "identical links")
+        W.state.items[6002].reportedLink = "|Hitem:6002::::::::60:::::|h[x]|h"      -- the same item string, no color or name
+        T.has(compareTip(), "Score: 95", "same item string")
+        W.state.items[6002].reportedLink = "item:6002"                               -- only the item id agrees
+        T.has(compareTip(), "Score: 95", "same item id")
+        -- an item that is not worn at all: no slot found, scored as a main-hand weapon
+        local spare = F.gear(W, 6006, "Spare Sword", "INVTYPE_WEAPON", 30, {}, { dps = 20 })
+        local shop = W.env.ShoppingTooltip1
+        shop:SetOwner(W.env.GameTooltip, "ANCHOR_NONE")
+        W.env.__showItem(shop, spare)
+        T.has(shop:Dump(), "Score: 175", "no match: full weapon damage")
+    end)
+
+    T.test("tooltip: two worn copies of one weapon are told apart by their item string", function()
+        local W = world(function(w)
+            local twin = F.gear(w, 6007, "Twin Sword", "INVTYPE_WEAPON", 30, {}, { dps = 20 })
+            w.equip(16, "|cff1eff00|Hitem:6007::::::::60:::::|h[Twin Sword]|h|r")
+            w.equip(17, "|cff1eff00|Hitem:6007:2564:::::::60:::::|h[Twin Sword]|h|r")      -- enchanted
+            w.I.twin = twin
+        end)
+        -- the client reports the enchanted copy's link without color and name
+        W.state.items[6007].reportedLink = "|Hitem:6007:2564:::::::60:::::|h[x]|h"
+        local shop = W.env.ShoppingTooltip1
+        shop:SetOwner(W.env.GameTooltip, "ANCHOR_NONE")
+        W.env.__showItem(shop, W.I.twin)
+        T.has(shop:Dump(), "Score: 95", "it is the off-hand copy: half damage")
+        W.state.items[6007].reportedLink = "|Hitem:6007::::::::60:::::|h[x]|h"
+        W.EG.Items.Wipe()
+        shop:SetOwner(W.env.GameTooltip, "ANCHOR_NONE")
+        W.env.__showItem(shop, W.I.twin)
+        T.has(shop:Dump(), "Score: 175", "and this one is the main-hand copy")
+    end)
 end

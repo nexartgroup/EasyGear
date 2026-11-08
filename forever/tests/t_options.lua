@@ -139,29 +139,85 @@ return function(T)
         T.has(W.chatText(), "settings page is not available")
     end)
 
-    T.test("options: values changed elsewhere reach an open page - without starting a loop", function()
+    T.test("options: only values that changed elsewhere reach an open page - without a loop or a click for every setting", function()
         local W = world()
         W.state.settingsOpen = true
         local s = W.state.settingByVariable
+        local function told()
+            local names = {}
+            for var, st in pairs(s) do if (st.notified or 0) > 0 then names[#names + 1] = var .. "=" .. st.notified end end
+            table.sort(names)
+            return table.concat(names, " ")
+        end
         local calls = 0
         W.EG:Listen("INVALIDATED", function() calls = calls + 1 end)
+
         W.slash("ilvl 0.9")
-        T.eq(calls, 1, "one invalidation - the notifications of the page started no second one")
-        for _, var in ipairs({ "EasyGear_ilvlWeight", "EasyGear_showBagIcons", "EasyGear_tooltipDiff",
-                               "EasyGear_minDeltaPercent", "EasyGear_PROFILE" }) do
-            T.ok((s[var].notified or 0) >= 1, var .. " was told")
-        end
+        T.eq(calls, 1, "one invalidation - the notification of the page started no second one")
+        T.eq(told(), "EasyGear_ilvlWeight=1", "only the changed setting is told (a checkbox would click)")
         T.eq(s.EasyGear_ilvlWeight:GetValue(), 0.9)
-        -- a change on the page itself is one invalidation as well
+
+        -- a change on the page itself tells nobody: the control shows it already
         calls = 0
         s.EasyGear_showBagIcons:SetValue(false)
         T.eq(calls, 1)
         T.eq(W.env.EasyGearDB.showBagIcons, false)
-        -- and so is the reset
-        calls = 0
+        T.eq(told(), "EasyGear_ilvlWeight=1", "no one was told about the page's own change")
+        W.slash("icons on")
+        T.eq(told(), "EasyGear_ilvlWeight=1 EasyGear_showBagIcons=1", "but a chat command is")
+
+        -- the reset tells exactly those that differ from what the page shows
+        W.slash("tooltip off")
         W.slash("reset")
-        T.eq(calls, 1)
-        T.eq(s.EasyGear_showBagIcons:GetValue(), true)
+        T.eq(s.EasyGear_showTooltip:GetValue(), true) T.eq(s.EasyGear_ilvlWeight:GetValue(), 0.5)
+        T.eq(s.EasyGear_showTooltip.notified, 2, "off by command, back by reset") T.eq(s.EasyGear_ilvlWeight.notified, 2)
+        T.eq(s.EasyGear_showBagIcons.notified, 1, "already back on: the reset did not touch it")
+        T.eq(s.EasyGear_tooltipDiff.notified, nil, "unchanged settings stay untouched")
+    end)
+
+    T.test("options: the profile follows changes made elsewhere, not the page's own choice", function()
+        local W = world()
+        W.state.settingsOpen = true
+        local p = W.state.settingByVariable.EasyGear_PROFILE
+        p:SetValue("WARRIOR_FURY")
+        T.eq(W.EG.Profiles.ActiveID(), "WARRIOR_FURY") T.eq(p.notified, nil, "own choice")
+        W.slash("profile warrior_prot")
+        T.eq(p.notified, 1) T.eq(p:GetValue(), "WARRIOR_PROT")
+        W.slash("profile warrior_prot")
+        T.eq(p.notified, 1, "nothing changed, nobody is told")
+    end)
+
+    T.test("options: a control that adjusts the value (a slider snapping to its step) is taken over and evaluated", function()
+        local W = world()
+        W.state.settingsOpen = true
+        local slider = W.state.settingByVariable.EasyGear_ilvlWeight
+        slider:SetValueChangedCallback(function(setting, v)
+            local snapped = math.floor(v / 0.05 + 0.5) * 0.05
+            if math.abs(snapped - v) > 1e-9 then setting:SetValue(snapped) end
+        end)
+        local calls = 0
+        W.EG:Listen("INVALIDATED", function() calls = calls + 1 end)
+        W.slash("ilvl 0.73")
+        T.near(W.EG:Get("ilvlWeight"), 0.75, 1e-9, "the control's value stands")
+        T.eq(calls, 2, "evaluated once more with the adjusted value")
+        -- ilvl 30 x 0.75 + 20 STR x 1 + 20 STA x 0.1 + 300 armor x 0.025 = 22.5 + 20 + 2 + 7.5
+        T.near(W.EG.Score.OfLink(W.I.chest), 52, 1e-9)
+    end)
+
+    T.test("options: the slider ranges are the ranges of the chat commands", function()
+        local W = world()
+        local ranges = W.EG.RANGES
+        local sliders = {}
+        for _, c in ipairs(category(W).controls) do if c.kind == "slider" then sliders[#sliders + 1] = c end end
+        T.eq(sliders[1].options.minValue, ranges.ilvlWeight[1]) T.eq(sliders[1].options.maxValue, ranges.ilvlWeight[2])
+        T.eq(sliders[2].options.minValue, ranges.minDeltaPercent[1]) T.eq(sliders[2].options.maxValue, ranges.minDeltaPercent[2])
+        for _, cmd in ipairs({ { "ilvl", "ilvlWeight" }, { "mindeltapct", "minDeltaPercent" } }) do
+            local hi = ranges[cmd[2]][2]
+            W.slash(cmd[1] .. " " .. hi)
+            T.eq(W.EG:Get(cmd[2]), hi, cmd[1] .. " accepts the slider maximum")
+            W.slash(cmd[1] .. " " .. (hi + 0.5))
+            T.eq(W.EG:Get(cmd[2]), hi, cmd[1] .. " refuses more than the slider can show")
+        end
     end)
 
     T.test("options: a closed settings window is not bothered", function()

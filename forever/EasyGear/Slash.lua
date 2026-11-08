@@ -60,6 +60,12 @@ local function ExtractLink(text)
         or smatch(text, "(item:%d+[%d:%-]*)")
 end
 
+-- Zahl im Bereich einer Einstellung (EG.RANGES: derselbe wie am Regler der Einstellungsseite)
+local function ReadSetting(text, key)
+    local range = EG.RANGES[key]
+    return ReadRange(text, range[1], range[2])
+end
+
 -- Gegenstandsnummer: ganze Zahl ab 1
 local function ParseItemID(text)
     local id = tonumber(text)
@@ -351,6 +357,12 @@ end
 -- 02  Hilfe
 ------------------------------------------------------------------------------
 
+-- Wertebereich einer Einstellung als Text fuer die Hilfe ("0-2"); derselbe wie am Regler der Einstellungsseite
+local function Range(key)
+    local r = EG.RANGES[key]
+    return EG.FmtWeight(r[1]) .. "-" .. EG.FmtWeight(r[2])
+end
+
 -- Befehl, Beschreibungsschluessel (Befehle sind in jeder Sprache gleich)
 local HELP = {
     { "/eg",                                  "H_EG" },
@@ -363,14 +375,14 @@ local HELP = {
     { "/eg weight <stat> <value>",            "H_WEIGHT" },
     { "/eg autolevel [on|off]",               "H_AUTOLEVEL" },
     { "/eg enchants [on|off]",                "H_ENCHANTS" },
-    { "/eg socket <number | auto>",           "H_SOCKET" },
-    { "/eg ilvl <number>",                    "H_ILVL" },
+    { "/eg socket <" .. Range("socketValue") .. " | auto>", "H_SOCKET" },
+    { "/eg ilvl <" .. Range("ilvlWeight") .. ">",           "H_ILVL" },
     { "/eg ilvlscale [on|off]",               "H_ILVLSCALE" },
-    { "/eg mindelta <number>",                "H_MINDELTA" },
-    { "/eg mindeltapct <percent>",            "H_MINDELTAPCT" },
+    { "/eg mindelta <" .. Range("minDelta") .. ">",         "H_MINDELTA" },
+    { "/eg mindeltapct <" .. Range("minDeltaPercent") .. ">", "H_MINDELTAPCT" },
     { "/eg icons | items | quest | char | tooltip | diff", "H_TOGGLES" },
     { "/eg options",                          "H_OPTIONS" },
-    { "/eg scale <0.5-2.0>",                  "H_SCALE" },
+    { "/eg scale <" .. Range("scale") .. ">",               "H_SCALE" },
     { "/eg status",                           "H_STATUS" },
     { "/eg parse <itemlink>",                 "H_PARSE" },
     { "/eg unknown",                          "H_UNKNOWN" },
@@ -520,13 +532,13 @@ function Slash.Handle(msg)
         if slower(rest) == "auto" then
             EG:Set("socketValue", nil)
         elseif rest ~= "" then
-            local v = ReadRange(rest, 0, 1000)
+            local v = ReadSetting(rest, "socketValue")
             if v then EG:Set("socketValue", v) end
         end
         EG:Print(L.SOCKETS .. ": " .. SocketText())
     elseif cmd == "ilvl" then
         if rest ~= "" then
-            local v = ReadRange(rest, 0, 10)
+            local v = ReadSetting(rest, "ilvlWeight")
             if v then EG:Set("ilvlWeight", v) end
         end
         ShowIlvl()
@@ -537,13 +549,13 @@ function Slash.Handle(msg)
         EG:Print(sformat(L.SET_ILVLSCALE, OnOff(v), EG.FmtWeight(factor)) .. "  ->  " .. EG.FmtWeight(eff))
     elseif cmd == "mindelta" then
         if rest ~= "" then
-            local v = ReadRange(rest, 0, 1000)
+            local v = ReadSetting(rest, "minDelta")
             if v then EG:Set("minDelta", v) end
         end
         ShowMinDelta()
     elseif cmd == "mindeltapct" then
         if rest ~= "" then
-            local v = ReadRange(rest, 0, 100)
+            local v = ReadSetting(rest, "minDeltaPercent")
             if v then EG:Set("minDeltaPercent", v) end
         end
         ShowMinDelta()
@@ -554,7 +566,7 @@ function Slash.Handle(msg)
     elseif cmd == "scale" then
         EG.cdb.gui = EG.cdb.gui or {}
         if rest ~= "" then
-            local v = ReadRange(rest, 0.5, 2.0)
+            local v = ReadSetting(rest, "scale")
             if v then
                 EG.cdb.gui.scale = v
                 EG:Fire("GUI_SCALE")
