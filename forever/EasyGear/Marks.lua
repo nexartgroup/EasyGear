@@ -48,7 +48,11 @@ end
 local function ShowArrow(button, state)
     local tex = Ensure(button, "EasyGearArrow", 7)
     tex:ClearAllPoints()
-    tex:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+    -- Wie der eigene Pfeil der Taschen oben links; zeigt der Haendler dort den Restbestand (Stock), geht er nach rechts
+    local corner = "TOPLEFT"
+    local stock = button.Stock
+    if type(stock) == "table" and stock.IsShown and stock:IsShown() then corner = "TOPRIGHT" end
+    tex:SetPoint(corner, button, corner, 0, 0)
     tex:SetSize(ARROW_SIZE, ARROW_SIZE)
     if AtlasExists(ARROW_ATLAS) then
         tex:SetAtlas(ARROW_ATLAS)

@@ -182,9 +182,10 @@ function Score.ExtraPoints(item)
 end
 
 --[[ Attribut-Unterschiede zwischen einem Kandidaten und den Gegenstaenden, die er ersetzt.
-     targets = Liste von { item, slotID }. Rueckgabe: nach Gewicht sortierte Liste
+     targets = Liste von { item, slotID }; candSlot = Platz des Kandidaten (in der Nebenhand zaehlt seine
+     Waffe nur halb, wie in der Wertung). Rueckgabe: nach Gewicht sortierte Liste
      { key, label, delta, points } - nur Attribute, die das Profil bewertet.                  ]]
-function Score.StatDiff(item, targets)
+function Score.StatDiff(item, targets, candSlot)
     local out = {}
     if not item then return out end
     local weights = Profiles.Resolve().weights
@@ -224,7 +225,7 @@ function Score.StatDiff(item, targets)
 
     -- Waffen-DPS
     if item.handKind then
-        local cand = item.dps or 0
+        local cand = (item.dps or 0) * (IsOffhandWeapon(item, candSlot) and OFFHAND_FACTOR or 1)
         local w = Score.HandWeight(weights, item.handKind)
         local have = (item.handKind == "RANGED") and trdps or tdps
         local d = cand - have
@@ -323,14 +324,17 @@ function Score.CanDualWield()
 end
 
 --[[ Darf eine Einhandwaffe auch in die Nebenhand? Beidhaendigkeit allein reicht nicht: ein
-     Schutzkrieger kann zwar beidhaendig kaempfen, traegt aber ein Schild. Fuer Tank-, Heiler- und
-     Zauberprofile gilt die Nebenhand deshalb nur dann als Waffenplatz, wenn dort schon eine Waffe liegt. ]]
+     Schutzkrieger kann zwar beidhaendig kaempfen, traegt aber ein Schild. Liegt in der Nebenhand ein Schild
+     oder Buch, gilt sie nie als Waffenplatz; bei Tank-, Heiler- und Zauberprofilen auch dann nicht, wenn sie
+     leer ist (dort muss schon eine Waffe liegen).                                                       ]]
 function Score.WantsDualWield()
     if not Score.CanDualWield() then return false end
+    local loc = EquippedLoc(17)
+    -- Wer Schild oder Buch in der Nebenhand fuehrt, kaempft nicht beidhaendig - gleich in welchem Profil
+    if loc == "INVTYPE_SHIELD" or loc == "INVTYPE_HOLDABLE" then return false end
     local spec = Profiles.ActiveSpec()
     local role = spec and spec.role
     if role == "TANK" or role == "HEAL" or role == "CASTER" then
-        local loc = EquippedLoc(17)
         return (loc == "INVTYPE_WEAPON" or loc == "INVTYPE_WEAPONOFFHAND") and true or false
     end
     return true
@@ -382,8 +386,9 @@ end
        usable, reason, levelTooLow, replaced, notes, note
      }                                                                                    ]]
 function Score.Compare(linkOrItem, detail)
-    local item = type(linkOrItem) == "table" and linkOrItem or Items.Get(linkOrItem)
-    if not item then return nil, "loading" end
+    local item, why = linkOrItem, nil
+    if type(linkOrItem) ~= "table" then item, why = Items.Get(linkOrItem) end
+    if not item then return nil, why or "loading" end
 
     local profile = Profiles.Resolve()
     local cacheKey
@@ -421,8 +426,8 @@ function Score.Compare(linkOrItem, detail)
     for _, slotID in ipairs(slots) do
         local link = Items.EquippedLink(slotID)
         if link then
-            local eq = Items.Get(link)
-            if not eq then return nil, "loading" end
+            local eq, eqWhy = Items.Get(link)
+            if not eq then return nil, eqWhy or "loading" end
             local entry = { item = eq, link = link, slotID = slotID, score = Score.Of(eq, slotID) }
             if detail then entry.breakdown = (Score.Breakdown(eq, slotID)) end
             result.equipped[#result.equipped + 1] = entry
@@ -567,16 +572,20 @@ end
 --[[ Summiert alle Werte der angelegten Ausruestung. Die Wertung ist linear, deshalb ergibt die Summe der
      Einzelwerte mal den Gewichten genau dieselbe Gesamtwertung wie das Aufaddieren der Einzelwertungen:
      die komplette Ausruestung laesst sich so unter beliebigen Gewichten durchrechnen.                ]]
-local equippedTotals
+local totalsCache = {}                      -- .t = die Summen; bei Core angemeldet, wird mit den Vergleichen geleert
+EG:RegisterCache(totalsCache)
 
 function Score.EquippedTotals(force)
-    if equippedTotals and not force then return equippedTotals end
+    if totalsCache.t and not force then return totalsCache.t end
     local t = { ILVL = 0, DPS = 0, RDPS = 0, SOCKET = 0, COUNT = 0, stats = {} }
+    local complete = true
     for slot = 1, MAX_EQUIP_SLOT do
         local link = Items.EquippedLink(slot)
         if link then
             local item = Items.Get(link)
-            if item then
+            if not item then
+                complete = false                        -- noch nicht geladen: die Summe ist vorlaeufig
+            elseif item.isGear then                     -- Hemd und Wappenrock gehoeren nicht dazu
                 t.COUNT = t.COUNT + 1
                 t.ILVL = t.ILVL + (item.ilvl or 0)
                 t.SOCKET = t.SOCKET + (item.sockets or 0)
@@ -590,11 +599,9 @@ function Score.EquippedTotals(force)
             end
         end
     end
-    equippedTotals = t
+    if complete then totalsCache.t = t end               -- eine unvollstaendige Summe nicht festhalten
     return t
 end
-
-EG:Listen("INVALIDATED", function() equippedTotals = nil end)
 
 -- Berechnungsgrundlage einer Wertesammlung unter beliebigen Gewichten (Profilvergleich)
 function Score.TotalsBreakdown(totals, weights)
@@ -647,10 +654,20 @@ end
 -- 05  Ereignisse
 ------------------------------------------------------------------------------
 
--- Ausruestung oder Taschen aendern den Stand: Ergebnisse verwerfen, die Anzeigen auffrischen
+--[[ Die Ausruestung hat sich geaendert. Was von ihr abhaengt, wird sofort verworfen: die Fenster der Oberflaeche
+     frischen ihre Symbole im selben Augenblick auf und sollen nicht mehr mit dem alten Stand rechnen. Das
+     Auffrischen der eigenen Anzeigen folgt gebuendelt.                                                      ]]
 local function Changed()
+    EG:InvalidateResults()              -- auch die Profilwahl: bei manchen Baeumen entscheiden die getragenen Waffen
     EG:Debounce("gearChanged", 0.2, function() EG:InvalidateAll() end)
 end
 EG:On("PLAYER_EQUIPMENT_CHANGED", Changed)
 EG:On("ITEM_UPGRADE_MASTER_UPDATE", Changed)
-EG:Listen("ITEMS_LOADED", function() EG:InvalidateComparisons() EG:Fire("REFRESH") end)
+-- Verzauberung und Edelsteine aendern den Link, ohne dass der Platz wechselt
+EG:On("UNIT_INVENTORY_CHANGED", function(_, unit)
+    if unit == "player" then Changed() end
+end)
+EG:Listen("ITEMS_LOADED", function()
+    EG:InvalidateComparisons()
+    EG:Fire("REFRESH")
+end)

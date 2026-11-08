@@ -15,12 +15,14 @@ What it does:
  1. Reads all .toc files and works out which files game type "camelot" (WoW Forever) really loads
     ([Family] = Mainline, [Game] = Camelot, [AllowLoadGameType ...] / [ExcludeLoadGameType ...]),
     following <Include>/<Script> in the .xml files.
- 2. Runs luacheck over exactly those files and collects the globals that Blizzard code sets or reads.
+ 2. Runs luacheck over exactly those files - and over the Lua code embedded in the XML scripts of the loaded
+    XML files (OnClick, OnLoad, ...) - and collects the globals that Blizzard code sets or reads.
  3. Reads the API documentation (namespaces, functions, events, enumerations).
  4. Writes the std. Documented namespaces and Enum are strict (a misspelled function is an error).
     A few Lua-defined tables (Settings, TooltipUtil, ...) are strict one level deep. Everything else
     that exists only as a name (frames, templates, GlobalStrings) accepts any field.
 """
+import html
 import os
 import re
 import subprocess
@@ -134,6 +136,35 @@ def collect_loaded(root):
     return addons, out, xml_seen
 
 
+# not self-closing (<OnLoad method="..."/> has no code): the tag must not end in "/>"
+SCRIPT_BLOCK = re.compile(r"<(On[A-Za-z]+|PreClick|PostClick|Script)(?:\s[^>]*?)?(?<!/)>(.*?)</\1>", re.S)
+
+
+def extract_xml_scripts(xml_files, outdir):
+    """Lua code that sits inside XML script elements, written to .lua files so that luacheck can read it."""
+    folder = os.path.join(outdir, "xmlscripts")
+    os.makedirs(folder, exist_ok=True)
+    for old in os.listdir(folder):
+        os.remove(os.path.join(folder, old))
+    out = []
+    for i, path in enumerate(sorted(xml_files)):
+        parts = []
+        for m in SCRIPT_BLOCK.finditer(read(path)):
+            body = html.unescape(m.group(2)).strip()
+            if body.startswith("<![CDATA["):
+                body = body[len("<![CDATA["):]
+                if body.endswith("]]>"):
+                    body = body[:-3]
+            if body.strip():
+                parts.append("local function f(self, ...)\n%s\nend\n" % body)
+        if parts:
+            target = os.path.join(folder, "x%05d.lua" % i)
+            with open(target, "w", encoding="utf-8") as f:
+                f.write("\n".join(parts))
+            out.append(target)
+    return out
+
+
 def run_luacheck(files):
     out = []
     for i in range(0, len(files), 400):
@@ -230,7 +261,9 @@ def main():
     addons, files, xml_files = collect_loaded(root)
     print("addons camelot loads: %d   Lua files: %d   XML files: %d" % (len(addons), len(files), len(xml_files)))
 
-    set_g, read_g = parse_luacheck(run_luacheck(files))
+    scripts = extract_xml_scripts(xml_files, outdir)
+    print("XML files with embedded scripts: %d" % len(scripts))
+    set_g, read_g = parse_luacheck(run_luacheck(files + scripts))
     print("globals set by Blizzard code: %d   read but never set: %d" % (len(set_g), len(read_g)))
 
     xml_names = set()

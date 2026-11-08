@@ -16,9 +16,10 @@ return function(T)
 
     T.test("marks: the hooks are installed and reported", function()
         local W = world()
-        for _, name in ipairs({ "itembuttons", "merchant", "rolls", "quest", "tooltip", "settings", "shiftclick" }) do
+        for _, name in ipairs({ "itembuttons", "merchant", "rolls", "tooltip", "settings", "shiftclick" }) do
             T.eq(W.EG.hookStatus[name] and W.EG.hookStatus[name].ok, true, name)
         end
+        T.eq(W.EG.hookStatus.quest, nil, "QuestInfo_ShowRewards is not hooked: its callers hold the function values")
     end)
 
     T.test("marks: bag button - arrow for an upgrade, nothing for the rest", function()
@@ -101,6 +102,78 @@ return function(T)
         T.eq(arrow(mail), true, "mail passes the item id")
     end)
 
+    T.test("contexts: slot names come from a whitelist - bag, ammo and unknown slots are no equipment", function()
+        local W = world()
+        local C = W.EG.Contexts
+        local expect = { Head = 1, Neck = 2, Shoulder = 3, Shirt = 4, Chest = 5, Waist = 6, Legs = 7, Feet = 8,
+                         Wrist = 9, Hands = 10, Finger0 = 11, Finger1 = 12, Trinket0 = 13, Trinket1 = 14, Back = 15,
+                         MainHand = 16, SecondaryHand = 17, Ranged = 18, Tabard = 19 }
+        for name, slot in pairs(expect) do
+            local kind, id = C.SlotOfName("Character" .. name .. "Slot")
+            T.eq(kind, "Character", name) T.eq(id, slot, name)
+            kind, id = C.SlotOfName("Inspect" .. name .. "Slot")
+            T.eq(kind, "Inspect", name) T.eq(id, slot, name)
+        end
+        for _, name in ipairs({ "CharacterBag0Slot", "CharacterBag3Slot", "CharacterReagentBag0Slot", "CharacterAmmoSlot",
+                                "CharacterFooSlot", "CharacterSlot", "MyCharacterHeadSlot", "CharacterHeadSlotX", "" }) do
+            T.eq(C.SlotOfName(name), nil, name)
+        end
+        T.eq(C.SlotOfName(nil), nil) T.eq(C.SlotOfName(5), nil) T.eq(C.SlotOfName({}), nil)
+        T.eq(C.Classify(W.namedButton("CharacterBag0Slot", 20)), false, "the bag bar buttons are not character slots")
+        T.eq(C.Classify(W.namedButton("CharacterAmmoSlot", 0)), false)
+        T.eq(C.Classify(W.namedButton("InspectHeadSlot", 1)), false, "inspecting someone is not our own character window")
+    end)
+
+    T.test("marks: the mail attachment takes its link from the inbox, not from the bare item id", function()
+        local W = world()
+        W.env.InboxFrame = { openMailID = 4 }
+        local asked = {}
+        W.env.GetInboxItemLink = function(mailID, i)
+            asked[#asked + 1] = mailID .. ":" .. i
+            return W.I.better
+        end
+        local mail = W.namedButton("OpenMailAttachmentButton2", 2)
+        W.env.SetItemButtonQuality(mail, 3, 7002)           -- Blizzard passes only the (weak) item id
+        T.eq(arrow(mail), true, "the inbox link decides")
+        T.eq(asked[1], "4:2")
+        -- without an open mail or inbox function the id has to do
+        W.env.GetInboxItemLink = nil
+        W.env.SetItemButtonQuality(mail, 3, 7002)
+        T.eq(arrow(mail), false, "weak id alone")
+        W.env.GetInboxItemLink = function() return nil end
+        W.env.SetItemButtonQuality(mail, 3, 7001)
+        T.eq(arrow(mail), true, "an empty answer falls back to the id")
+    end)
+
+    T.test("marks: a loot roll asks GetLootRollItemLink first and the tooltip data second", function()
+        local W = world()
+        local calls = 0
+        W.env.GetLootRollItemLink = function(rollID) calls = calls + 1 return rollID == 9 and W.I.better or nil end
+        local frame = { rollID = 9, IconFrame = W.env.CreateFrame("Frame") }
+        W.env.GroupLootFrame_SetupItemDisplay(frame)
+        T.eq(arrow(frame.IconFrame), true) T.eq(calls, 1)
+        W.state.rolls = { [11] = W.I.better }
+        local second = { rollID = 11, IconFrame = W.env.CreateFrame("Frame") }
+        W.env.GroupLootFrame_SetupItemDisplay(second)
+        T.eq(arrow(second.IconFrame), true, "falls back to C_TooltipInfo.GetLootRollItem")
+        W.env.GetLootRollItemLink = function() error("not available yet") end
+        local third = { rollID = 11, IconFrame = W.env.CreateFrame("Frame") }
+        W.env.GroupLootFrame_SetupItemDisplay(third)
+        T.eq(arrow(third.IconFrame), true, "an error in the getter does not lose the roll")
+    end)
+
+    T.test("marks: the arrow moves to the right corner when the vendor shows the remaining stock", function()
+        local W = world()
+        local frame = { ItemButton = W.namedButton("MerchantItem2ItemButton", 2) }
+        frame.ItemButton.Stock = W.env.CreateFrame("Frame")
+        frame.ItemButton.Stock:Hide()
+        W.env.MerchantFrameItem_UpdateQuality(frame, W.I.better, false)
+        T.eq((frame.ItemButton.EasyGearArrow:GetPoint(1)), "TOPLEFT")
+        frame.ItemButton.Stock:Show()
+        W.env.MerchantFrameItem_UpdateQuality(frame, W.I.better, false)
+        T.eq((frame.ItemButton.EasyGearArrow:GetPoint(1)), "TOPRIGHT", "the stock number sits at the left")
+    end)
+
     T.test("marks: group loot rolls take the link from the tooltip data", function()
         local W = world(function(w) w.state.rolls = { [9] = w.I.better } end)
         local frame = { rollID = 9, IconFrame = W.env.CreateFrame("Frame") }
@@ -124,6 +197,16 @@ return function(T)
         W.state.bags[0].items[1] = nil
         W.flush()
         T.eq(arrow(chest), false)
+    end)
+
+    T.test("marks: the character hint is stale-free at the moment the equipment changes", function()
+        local W = world(function(w) w.bag(0, 8, { [1] = w.I.better }) end)
+        local C = W.EG.Contexts
+        T.ok(C.SlotHint(5), "something better for the chest is in the bags")
+        W.equip(5, W.I.better)
+        W.state.bags[0].items[1] = nil
+        W.fire("PLAYER_EQUIPMENT_CHANGED", 5)
+        T.eq(C.SlotHint(5), nil, "no timer needs to run first")
     end)
 
     T.test("marks: bag changes update the character window hint", function()
@@ -284,9 +367,23 @@ return function(T)
         local choices = { { link = W.I.a }, { link = W.I.b } }
         local buttons = W.questRewards(choices, true)
         for i, b in ipairs(buttons) do W.env.SetItemButtonQuality(b, 3, 7026 + i) end
-        W.env.QuestInfo_ShowRewards()
         W.flush()
         T.eq(check(buttons[2]), true)
+    end)
+
+    T.test("quest: a reward frame that is not shown gets no check mark", function()
+        local W = world(function(w)
+            w.I.a = F.gear(w, 7050, "A", "INVTYPE_CHEST", 36, { STR = 25 }, { armor = 400 })
+            w.I.b = F.gear(w, 7051, "B", "INVTYPE_CHEST", 40, { STR = 30 }, { armor = 500 })
+        end)
+        local b = W.questRewards({ { link = W.I.a }, { link = W.I.b } })
+        W.env.QuestInfoFrame.rewardsFrame.IsVisible = function() return false end
+        W.showRewards()
+        T.eq(check(b[1]) or check(b[2]), false)
+        W.env.QuestInfoFrame.rewardsFrame.IsVisible = function() return true end
+        W.fire("GET_ITEM_INFO_RECEIVED", 7050, true)
+        W.flush()
+        T.eq(check(b[2]), true, "when the frame shows, the next refresh sets the mark")
     end)
 
     T.test("quest: choices the client marks unusable do not take part", function()

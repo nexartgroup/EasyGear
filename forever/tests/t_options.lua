@@ -77,6 +77,7 @@ return function(T)
         T.eq(dd.setting:GetValue(), "AUTO")
         dd.setting:SetValue("WARRIOR_FURY")
         T.eq(W.EG.Profiles.ActiveID(), "WARRIOR_FURY")
+        W.state.settingsOpen = true
         W.EG.Profiles.SetActive("AUTO")
         T.ok((W.state.settingByVariable.EasyGear_PROFILE.notified or 0) >= 1, "the page is told when the profile changes elsewhere")
     end)
@@ -136,5 +137,38 @@ return function(T)
         W.clearChat()
         T.eq(W.EG.Options.Open(), false)
         T.has(W.chatText(), "settings page is not available")
+    end)
+
+    T.test("options: values changed elsewhere reach an open page - without starting a loop", function()
+        local W = world()
+        W.state.settingsOpen = true
+        local s = W.state.settingByVariable
+        local calls = 0
+        W.EG:Listen("INVALIDATED", function() calls = calls + 1 end)
+        W.slash("ilvl 0.9")
+        T.eq(calls, 1, "one invalidation - the notifications of the page started no second one")
+        for _, var in ipairs({ "EasyGear_ilvlWeight", "EasyGear_showBagIcons", "EasyGear_tooltipDiff",
+                               "EasyGear_minDeltaPercent", "EasyGear_PROFILE" }) do
+            T.ok((s[var].notified or 0) >= 1, var .. " was told")
+        end
+        T.eq(s.EasyGear_ilvlWeight:GetValue(), 0.9)
+        -- a change on the page itself is one invalidation as well
+        calls = 0
+        s.EasyGear_showBagIcons:SetValue(false)
+        T.eq(calls, 1)
+        T.eq(W.env.EasyGearDB.showBagIcons, false)
+        -- and so is the reset
+        calls = 0
+        W.slash("reset")
+        T.eq(calls, 1)
+        T.eq(s.EasyGear_showBagIcons:GetValue(), true)
+    end)
+
+    T.test("options: a closed settings window is not bothered", function()
+        local W = world()
+        W.state.settingsOpen = false
+        W.slash("ilvl 0.9")
+        W.slash("tooltip off")
+        for var, st in pairs(W.state.settingByVariable) do T.eq(st.notified or 0, 0, var) end
     end)
 end

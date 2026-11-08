@@ -148,6 +148,7 @@ function Region:SetFormattedText(fmt, ...) self.__text = sformat(fmt, ...) end
 function Region:SetTextColor(r, g, b) self.__textColor = { r, g, b } end
 function Region:SetJustifyH() end
 function Region:SetJustifyV() end
+function Region:SetWordWrap(v) self.__wordWrap = v and true or false end
 function Region:SetFontObject(f) self.__font = f end
 function Region:SetTextInsets() end
 function Region:SetMaxLetters() end
@@ -512,7 +513,7 @@ function Mock.new(opts)
     env.C_TooltipInfo = {
         GetHyperlink = function(link)
             local it = itemFromAny(link)
-            if not it or it.uncached then return nil end
+            if not it or it.uncached or it.noTooltip then return nil end
             return tooltipDataFor(it)
         end,
         GetLootRollItem = function(rollID)
@@ -585,11 +586,14 @@ function Mock.new(opts)
     if talents.roles then talents.roles = { unpack(talents.roles) } end
     self.talents = talents
     env.C_SpecializationInfo = {
-        GetNumSpecializationsForClassID = function() return 3 end,
+        -- in Forever the count may be smaller than the number of trees; the addon must not rely on it
+        GetNumSpecializationsForClassID = function() return talents.numSpecs or 3 end,
         GetSpecializationInfo = function(i)
-            if talents.mode ~= "specinfo" then return nil end
+            if talents.mode == "none" or i > 3 then return nil end
             local role = talents.roles and talents.roles[i] or "DAMAGER"
-            return 100 + i, "Tree" .. i, "", 1, role, 1, talents.points[i] or 0
+            -- only the mode "specinfo" fills the points; the other modes answer with zeros (the feared case)
+            local spent = (talents.mode == "specinfo") and (talents.points[i] or 0) or 0
+            return 100 + i, "Tree" .. i, "", 1, role, 1, spent
         end,
         GetSpecialization = function()
             if talents.mode ~= "selected" then return nil end
@@ -602,11 +606,12 @@ function Mock.new(opts)
         GetConfigInfo = function() return { treeIDs = { 5 } } end,
         GetGroupDisplayInfoByTreeID = function()
             if talents.mode ~= "traits" then return nil end
-            return { { groupID = 11, orderIndex = 3 }, { groupID = 12, orderIndex = 1 }, { groupID = 13, orderIndex = 2 } }
+            -- the list order is the tree order the talent frame shows; orderIndex is deliberately out of line
+            return { { groupID = 12, orderIndex = 3 }, { groupID = 13, orderIndex = 1 }, { groupID = 11, orderIndex = 2 } }
         end,
         GetGroupCurrencyInfo = function()
             if talents.mode ~= "traits" then return nil end
-            -- tree order by orderIndex: group 12 first, 13 second, 11 third
+            -- tree 1 = group 12, tree 2 = group 13, tree 3 = group 11 (the list order above)
             return {
                 { traitNodeGroupID = 12, currencyInfos = { { spent = talents.points[1] or 0 } } },
                 { traitNodeGroupID = 13, currencyInfos = { { spent = talents.points[2] or 0 } } },
@@ -658,7 +663,12 @@ function Mock.new(opts)
             callbacks[variable] = callbacks[variable] or {}
             table.insert(callbacks[variable], fn)
         end
-        function s:NotifyUpdate() self.notified = (self.notified or 0) + 1 end
+        -- like SettingMixin:NotifyUpdate: the current value goes to every value-changed callback
+        function s:NotifyUpdate()
+            self.notified = (self.notified or 0) + 1
+            local v = getv()
+            for _, cb in ipairs(callbacks[variable] or {}) do cb(self, v) end
+        end
         byVariable[variable] = s
         cat.settings[#cat.settings + 1] = s
         return s
@@ -710,6 +720,8 @@ function Mock.new(opts)
         local s = byVariable[variable]
         if s then s:NotifyUpdate() end
     end
+    -- the settings window: only an open page needs to hear about changes made elsewhere (tests set state.settingsOpen)
+    env.SettingsPanel = { IsShown = function() return self.settingsOpen == true end }
     env.CreateSettingsListSectionHeaderInitializer = function(name) return { kind = "header", name = name } end
     env.CreateSettingsButtonInitializer = function(name, text, onClick, tip, search)
         assert(search ~= nil, "addSearchTags must be given")
@@ -728,7 +740,6 @@ function Mock.new(opts)
         if not frame.rollID then return false end
         return true
     end
-    env.QuestInfo_ShowRewards = function() end
 
     ------------------------------------------------------------ switches that remove parts of the client
     if opts.noTooltipProcessor then env.TooltipDataProcessor = nil end
@@ -841,7 +852,6 @@ function Mock.new(opts)
         -- what Blizzard does when it shows the rewards
         function H.showRewards()
             for i, b in ipairs(buttons) do env.SetItemButtonQuality(b, 3, choices[i].link) end
-            env.QuestInfo_ShowRewards()
             H.flush()
         end
         return buttons

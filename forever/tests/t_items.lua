@@ -104,4 +104,51 @@ return function(T)
         T.eq(W.EG.Items.Equipped(5).name, "Worn")
         T.eq(W.EG.Items.Equipped(6), nil)
     end)
+
+    T.test("items: an item the client does not know is asked for once and then given up", function()
+        local W = T.world(F.ARMS)
+        local I = W.EG.Items
+        local it, why = I.Get(99999)
+        T.eq(it, nil) T.eq(why, "loading")
+        I.Get(99999) I.Get(99999)
+        T.eq(#W.state.loadRequests, 1, "requested once")
+        local loaded = 0
+        W.EG:Listen("ITEMS_LOADED", function() loaded = loaded + 1 end)
+        W.fire("GET_ITEM_INFO_RECEIVED", 99999, false)
+        W.flush()
+        T.eq(loaded, 0, "a failure is no reason to recompute everything")
+        it, why = I.Get(99999)
+        T.eq(it, nil) T.eq(why, "invalid")
+        T.eq(#W.state.loadRequests, 1, "and it is not asked for again")
+        W.fire("GET_ITEM_INFO_RECEIVED", 8001, true)
+        W.flush()
+        T.eq(loaded, 1, "a success announces the loaded items")
+        I.Wipe()
+        T.eq(select(2, I.Get(99999)), "loading", "after a wipe the question may be repeated")
+    end)
+
+    T.test("items: tooltip data that is not there yet is not kept - but only a few times", function()
+        local W = T.world(F.ARMS)
+        local I = W.EG.Items
+        local link = F.gear(W, 3101, "Odd Helm", "INVTYPE_HEAD", 30, { STR = 10 })
+        W.state.items[3101].noTooltip = true
+        local first = I.Get(link)
+        T.eq(first.partial, true) T.eq(first.stats.STR, 10, "the base stats come from GetItemStats")
+        local loaded = 0
+        W.EG:Listen("ITEMS_LOADED", function() loaded = loaded + 1 end)
+        W.flush()
+        T.eq(loaded, 1, "one refresh is scheduled for the missing tooltip data")
+        T.ok(I.Get(link) ~= first, "not kept: computed again")
+        I.Get(link)
+        local fourth = I.Get(link)
+        T.eq(I.Get(link), fourth, "after a few tries the partial data is accepted")
+
+        -- when the data arrives in time, the complete result is kept
+        local good = F.gear(W, 3102, "Later Helm", "INVTYPE_HEAD", 30, { STR = 10 })
+        W.state.items[3102].noTooltip = true
+        T.eq(I.Get(good).partial, true)
+        W.state.items[3102].noTooltip = nil
+        local full = I.Get(good)
+        T.eq(full.partial, nil) T.eq(I.Get(good), full, "kept")
+    end)
 end

@@ -157,7 +157,6 @@ EasyGearLocales["enUS"] = {
     H_WEIGHT = "set a weight in your active own profile, e.g. /eg weight CRIT 0.8",
     PARSE_HEAD = "Item analysis",
     PARSE_USAGE = "Usage: /eg parse <itemlink | itemID>",
-    ST_DEBUG = "Debug messages",
     ST_HOOKS = "Interface hooks",
     ST_LASTERROR = "Last error",
     ST_TALENTS = "Talent points",
@@ -167,6 +166,7 @@ EasyGearLocales["enUS"] = {
     UNKNOWN_NONE = "All stats on your gear and in your bags are known.",
     WEIGHT_NEED_CUSTOM = "The active profile is built in. Create your own first in /egprofile (Edit, Save as new profile) and activate it.",
     WEIGHT_USAGE = "Usage: /eg weight <stat> <weight>, e.g. /eg weight CRIT 0.8",
+    NUM_RANGE = "Please enter a number from %s to %s.",
 
     ---------- profiles
     SPEC_LEVELING = "Leveling (neutral)",

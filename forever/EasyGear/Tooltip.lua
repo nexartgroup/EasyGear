@@ -52,7 +52,8 @@ end
 --[[ Liste von Zeilen { left, right, color, rightColor, wrap }.
      mode "FULL" = mit Vergleich, "SCORE" = nur die Wertung.
      extra (optional): { pick = "UPGRADE"|"VENDOR"  - beste Questbelohnung,
-                         hint = Eintrag             - in den Taschen liegt etwas Besseres }          ]]
+                         hint = Eintrag             - in den Taschen liegt etwas Besseres,
+                         slot = Platznummer         - der Gegenstand ist dort angelegt }              ]]
 function Tooltip.BuildLines(item, result, mode, extra)
     local lines = {}
     if not item then return lines end
@@ -62,7 +63,9 @@ function Tooltip.BuildLines(item, result, mode, extra)
         return lines
     end
 
-    local score = result and result.score or Score.Of(item)
+    -- extra.slot: der Platz, in dem der Gegenstand liegt (Charakterfenster, Vergleichs-Tooltip) - in der Nebenhand
+    -- zaehlt die Waffe nur halb, wie im Vergleich
+    local score = result and result.score or Score.Of(item, extra and extra.slot)
     lines[#lines + 1] = { left = "EasyGear", right = L.SCORE .. ": " .. EG.FmtScore(score), color = TITLE, rightColor = WHITE }
 
     if extra and extra.pick then lines[#lines + 1] = PickLine(extra.pick) end
@@ -116,7 +119,7 @@ function Tooltip.BuildLines(item, result, mode, extra)
 
     -- Attribut-Unterschiede
     if EG:Get("tooltipDiff") and result.usable and result.replaced and #result.replaced > 0 then
-        local diffs = Score.StatDiff(item, result.replaced)
+        local diffs = Score.StatDiff(item, result.replaced, result.candSlot)
         for i = 1, mmin(#diffs, MAX_DIFF_LINES) do
             local d = diffs[i]
             lines[#lines + 1] = {
@@ -125,7 +128,7 @@ function Tooltip.BuildLines(item, result, mode, extra)
             }
         end
     elseif EG:Get("tooltipDiff") and result.usable and result.target and result.target.empty then
-        local diffs = Score.StatDiff(item, {})
+        local diffs = Score.StatDiff(item, {}, result.candSlot)
         for i = 1, mmin(#diffs, MAX_DIFF_LINES) do
             local d = diffs[i]
             lines[#lines + 1] = { left = FmtDelta(d.delta, d.decimals) .. " " .. d.label, color = GREEN }
@@ -154,21 +157,31 @@ local function Emit(tooltip, lines)
     end
 end
 
--- Besitzer ein Platz des Charakterfensters (oder der Inspektion)?
-local function IsEquippedContext(tooltip)
+-- Gehoert der Tooltip zu einem Platz des Charakterfensters (oder der Inspektion)?
+-- Rueckgabe: "Character" | "Inspect", Platznummer - oder nil
+local function EquippedOwner(tooltip)
+    local Contexts = EG.Contexts
     local owner = tooltip.GetOwner and tooltip:GetOwner()
-    local name = owner and owner.GetName and owner:GetName()
-    if type(name) == "string" and (smatch(name, "^Character%a+%d?Slot$") or smatch(name, "^Inspect%a+%d?Slot$")) then
-        return true
-    end
-    return false
+    local name = type(owner) == "table" and owner.GetName and owner:GetName()
+    if Contexts and type(name) == "string" then return Contexts.SlotOfName(name) end
+    return nil
 end
 
--- Vergleichs-Tooltip neben dem Haupt-Tooltip? Die Oberflaeche setzt isShopping; der Name ist die Reserve.
+-- Vergleichs-Tooltip neben dem Haupt-Tooltip? Die Oberflaeche gibt ihnen den Rahmen CompareHeader
+-- (ShoppingTooltipTemplate); Name und das Merkmal isShopping sind die Reserve.
 local function IsShoppingTooltip(tooltip)
-    if tooltip.isShopping then return true end
+    if tooltip.isShopping or tooltip.CompareHeader then return true end
     local name = tooltip.GetName and tooltip:GetName()
     return type(name) == "string" and smatch(name, "ShoppingTooltip%d$") ~= nil
+end
+
+-- In welchem Platz ist dieser Gegenstand angelegt? (Vergleichs-Tooltips zeigen angelegte Gegenstaende)
+local function WornSlotOf(item)
+    local slots = Score.EQUIP_LOC_SLOTS[item.equipLoc]
+    for _, slot in ipairs(slots or {}) do
+        if item.link and Items.EquippedLink(slot) == item.link then return slot end
+    end
+    return nil
 end
 
 local function LinkOf(tooltip, data)
@@ -190,16 +203,14 @@ end
 function Tooltip.ExtraFor(tooltip)
     local Contexts = EG.Contexts
     local owner = tooltip.GetOwner and tooltip:GetOwner()
-    if not (Contexts and owner) then return nil end
+    if not (Contexts and type(owner) == "table") then return nil end
 
     local extra = {}
     local recommended, kind = Contexts.IsRecommended(owner)
     if recommended then extra.pick = kind or "UPGRADE" end
 
-    local name = owner.GetName and owner:GetName()
-    if type(name) == "string" and smatch(name, "^Character%a+%d?Slot$") and owner.GetID then
-        extra.hint = Contexts.SlotHint(owner:GetID())
-    end
+    local where, slot = EquippedOwner(tooltip)
+    if where == "Character" then extra.hint = Contexts.SlotHint(slot) end
     if extra.pick or extra.hint then return extra end
     return nil
 end
@@ -219,8 +230,18 @@ function Tooltip.OnItem(tooltip, data)
     local extra = Tooltip.ExtraFor(tooltip)
     if not item.isGear and not (extra and extra.pick) then return end
 
-    local mode = "FULL"
-    if IsShoppingTooltip(tooltip) or IsEquippedContext(tooltip) then mode = "SCORE" end
+    -- Auf dem Charakterfenster und in den Vergleichs-Tooltips steht nur die Wertung (mit dem Platz des Gegenstands)
+    local mode, slot = "FULL", nil
+    local where, ownerSlot = EquippedOwner(tooltip)
+    if where then
+        mode, slot = "SCORE", ownerSlot
+    elseif IsShoppingTooltip(tooltip) then
+        mode, slot = "SCORE", WornSlotOf(item)
+    end
+    if slot then
+        extra = extra or {}
+        extra.slot = slot
+    end
 
     local result
     if mode == "FULL" and item.isGear then

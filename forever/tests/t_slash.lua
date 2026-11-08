@@ -98,6 +98,9 @@ return function(T)
         T.eq(W.EG.ProfileWindow.IsShown(), true)
         local id = W.EG.Profiles.CreateCustom("Mixed Case", "WARRIOR_ARMS")
         T.has(say(W, "profile " .. id), "Active profile: Mixed Case")
+        W.EG.Profiles.SetActive("AUTO")
+        T.has(say(W, "profile custom_mixedcase"), "Active profile: Mixed Case", "ids are matched without regard to case")
+        T.eq(W.EG.Profiles.ActiveID(), id)
     end)
 
     T.test("slash: /eg weight edits the active own profile only", function()
@@ -146,7 +149,6 @@ return function(T)
             say(W, cmd .. (before and " on" or " off"))
             T.eq(W.EG:Get(key), before, cmd .. " explicit")
         end
-        say(W, "debug on") T.eq(W.EG:Get("debug"), true)
     end)
 
     T.test("slash: status shows profile, talents, settings and the interface hooks", function()
@@ -219,5 +221,62 @@ return function(T)
         W.EG.Slash.PrintStatus = function() error("kaputt") end
         W.slash("status")
         T.ok(tostring(W.EG.lastError.err):find("kaputt", 1, true))
+    end)
+
+    T.test("slash: numbers outside their range or not numbers are refused with a hint", function()
+        local W = world()
+        for _, def in ipairs({
+            { "ilvl", "ilvlWeight", { "-1", "11", "abc", "nan", "inf", "-inf" }, "0 to 10" },
+            { "mindelta", "minDelta", { "-1", "1001", "abc", "inf" }, "0 to 1000" },
+            { "mindeltapct", "minDeltaPercent", { "-1", "101", "abc" }, "0 to 100" },
+            { "socket", "socketValue", { "-1", "1001", "abc" }, "0 to 1000" },
+        }) do
+            local before = W.EG:Get(def[2])
+            for _, bad in ipairs(def[3]) do
+                local text = say(W, def[1] .. " " .. bad)
+                T.has(text, "Please enter a number from " .. def[4], def[1] .. " " .. bad)
+                T.eq(W.EG:Get(def[2]), before, def[1] .. " " .. bad .. " changes nothing")
+            end
+        end
+        T.hasnt(say(W, "ilvl"), "Please enter", "no argument just shows the value")
+        T.has(say(W, "scale 3"), "Please enter a number from 0.5 to 2")
+        T.eq(W.env.EasyGearCharDB.gui.scale, 1)
+        T.hasnt(say(W, "ilvl 0"), "Please enter") T.eq(W.EG:Get("ilvlWeight"), 0, "the limits themselves are valid")
+        say(W, "ilvl 10") T.eq(W.EG:Get("ilvlWeight"), 10)
+        say(W, "mindeltapct 100") T.eq(W.EG:Get("minDeltaPercent"), 100)
+        say(W, "socket 0") T.eq(W.EG:Get("socketValue"), 0)
+        say(W, "socket 1,5") T.eq(W.EG:Get("socketValue"), 1.5, "a decimal comma works")
+    end)
+
+    T.test("slash: weights refuse nan and infinity", function()
+        local W = world()
+        local id = W.EG.Profiles.CreateCustom("Mine", "WARRIOR_ARMS")
+        W.EG.Profiles.SetActive(id)
+        local before = W.EG.Profiles.Get(id).weights.CRIT
+        for _, bad in ipairs({ "nan", "inf", "-inf" }) do
+            T.has(say(W, "weight CRIT " .. bad), "Usage")
+            T.eq(W.EG.Profiles.Get(id).weights.CRIT, before)
+        end
+    end)
+
+    T.test("slash: item strings and plain ids are accepted, other numbers are not items", function()
+        local W = world()
+        T.has(say(W, "item:9101"), "Better Chestplate")
+        T.has(say(W, "item:9101:0:0:0:0:0:0:0:60"), "Better Chestplate")
+        T.has(say(W, "parse item:9101"), "equipLoc=INVTYPE_CHEST")
+        T.has(say(W, "parse 9101"), "equipLoc=INVTYPE_CHEST")
+        W.EG.Window.Clear()
+        for _, junk in ipairs({ "0", "-5", "1.5" }) do
+            T.has(say(W, junk), "/eg upgrades", junk .. " shows the help")
+        end
+        T.eq(W.EG.Window.Link(), nil, "none of them reached the window")
+    end)
+
+    T.test("slash: the chat report comes first - an error in the window does not take it away", function()
+        local W = world()
+        W.EG.Window.SetItem = function() error("window broke") end
+        local text = say(W, "9101")
+        T.has(text, "===== EasyGear =====") T.has(text, ">> UPGRADE")
+        T.has(text, "window broke", "the problem is reported as well")
     end)
 end

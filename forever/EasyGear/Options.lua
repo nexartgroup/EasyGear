@@ -18,6 +18,8 @@ local ipairs, type, pcall, tostring = ipairs, type, pcall, tostring
 local sformat = string.format
 
 local category
+local variables = {}                -- Namen aller registrierten Einstellungen der Seite
+local notifying = false             -- die Seite wird gerade ueber einen Wert informiert, der von aussen kam
 
 ------------------------------------------------------------------------------
 -- 01  Beschreibung der Seite
@@ -50,7 +52,10 @@ Options.SLIDERS = {
 -- 02  Seite aufbauen
 ------------------------------------------------------------------------------
 
+-- Eine Einstellung der Seite hat sich geaendert. Waehrend die Seite nur nachgezogen wird (siehe unten) ist es kein
+-- neuer Wert, und die Auswertung darf nicht noch einmal anlaufen.
 local function Changed()
+    if notifying then return end
     EG:InvalidateAll()
 end
 
@@ -58,7 +63,8 @@ local function AddCheck(cat, def)
     local default = EG.DEFAULTS[def.key]
     local setting = Settings.RegisterAddOnSetting(cat, "EasyGear_" .. def.key, def.key, EG.db,
         Settings.VarType.Boolean, L[def.name], default)
-    setting:SetValueChangedCallback(Changed)
+    variables[#variables + 1] = "EasyGear_" .. def.key
+    setting:SetValueChangedCallback(EG:Guard("settings", Changed))
     Settings.CreateCheckbox(cat, setting, L[def.tip])
 end
 
@@ -66,7 +72,8 @@ local function AddSlider(cat, def)
     local default = EG.DEFAULTS[def.key]
     local setting = Settings.RegisterAddOnSetting(cat, "EasyGear_" .. def.key, def.key, EG.db,
         Settings.VarType.Number, L[def.name], default)
-    setting:SetValueChangedCallback(Changed)
+    variables[#variables + 1] = "EasyGear_" .. def.key
+    setting:SetValueChangedCallback(EG:Guard("settings", Changed))
     local options = Settings.CreateSliderOptions(def.min, def.max, def.step)
     if options.SetLabelFormatter and MinimalSliderWithSteppersMixin then
         options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(v)
@@ -81,6 +88,7 @@ local function AddProfileDropdown(cat)
     local function SetValue(value) Profiles.SetActive(value) end
     local setting = Settings.RegisterProxySetting(cat, "EasyGear_PROFILE", Settings.VarType.String,
         L.OPT_PROFILE, "AUTO", GetValue, SetValue)
+    variables[#variables + 1] = "EasyGear_PROFILE"
     local function GetOptions()
         local container = Settings.CreateControlTextContainer()
         container:Add("AUTO", L.OPT_PROFILE_AUTO)
@@ -158,11 +166,18 @@ function Options.Open()
     return false
 end
 
--- Das Profil kann auch ausserhalb der Seite wechseln: die Auswahl nachziehen
+--[[ Einstellungen und Profil koennen auch ausserhalb der Seite wechseln (Chatbefehle, Profilfenster, Zuruecksetzen):
+     die Felder der offenen Seite nachziehen. NotifyUpdate loest die Rueckrufe der Einstellungen aus, deshalb sperrt
+     `notifying` die Auswertung in Changed. Ist die Seite zu, liest sie beim Oeffnen ohnehin alles neu.        ]]
 EG:Listen("INVALIDATED", function()
-    if category and Settings and Settings.NotifyUpdate then
-        pcall(Settings.NotifyUpdate, "EasyGear_PROFILE")
+    if notifying or not (category and Settings and Settings.NotifyUpdate) then return end
+    local panel = _G.SettingsPanel
+    if type(panel) == "table" and type(panel.IsShown) == "function" and not panel:IsShown() then return end
+    notifying = true
+    for _, variable in ipairs(variables) do
+        pcall(Settings.NotifyUpdate, variable)
     end
+    notifying = false
 end)
 
 EG:OnLoad("options", function()

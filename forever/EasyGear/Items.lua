@@ -74,6 +74,9 @@ end
 
 local cache, cacheCount = {}, 0
 local requested = {}                -- itemID -> true: Laden ist angestossen
+local failed = {}                   -- itemID -> true: der Client kennt den Gegenstand nicht (nicht erneut fragen)
+local partialTries = {}             -- Schluessel -> Versuche, bei denen die Tooltip-Daten noch fehlten
+local MAX_PARTIAL_TRIES = 3
 
 local function Request(id)
     if id and not requested[id] and C_Item and C_Item.RequestLoadItemDataByID then
@@ -90,7 +93,7 @@ end
 
 function Items.Wipe()
     cache, cacheCount = {}, 0
-    requested = {}
+    requested, failed, partialTries = {}, {}, {}
     lastSig = Signature()
 end
 
@@ -106,16 +109,17 @@ local function GetInfo(link)
     return C_Item.GetItemInfo(link)
 end
 
+-- Rueckgabe: Zeilen | nil, gibt es die Schnittstelle ueberhaupt?  (nil bei vorhandener Schnittstelle = Daten fehlen noch)
 local function TooltipLines(link)
-    if not (C_TooltipInfo and C_TooltipInfo.GetHyperlink) then return nil end
+    if not (C_TooltipInfo and C_TooltipInfo.GetHyperlink) then return nil, false end
     local ok, data = pcall(C_TooltipInfo.GetHyperlink, link)
-    if ok and type(data) == "table" then return data.lines, data end
-    return nil
+    if ok and type(data) == "table" and type(data.lines) == "table" then return data.lines, true end
+    return nil, true
 end
 
 --[[ Rueckgabe: data | nil, grund
      grund "loading"  - noch nicht im Client-Zwischenspeicher, wurde angefordert
-     grund "invalid"  - kein Gegenstand                                                      ]]
+     grund "invalid"  - kein Gegenstand (oder dem Client unbekannt)                            ]]
 function Items.Get(linkOrID)
     local key = KeyOf(linkOrID)
     if not key then return nil, "invalid" end
@@ -129,6 +133,7 @@ function Items.Get(linkOrID)
           sellPrice, classID, subclassID, bindType = GetInfo(key)
 
     if not name or not ilvl then
+        if id and failed[id] then return nil, "invalid" end
         Request(id)
         return nil, id and "loading" or "invalid"
     end
@@ -162,7 +167,10 @@ function Items.Get(linkOrID)
             if ok then apiStats, unknown, sockets, apiDps = Stats.FromItemStats(tbl) end
         end
 
-        local lines = TooltipLines(data.link)
+        local lines, tooltipsExist = TooltipLines(data.link)
+        -- Die Tooltip-Daten tragen Verzauberung, Steine, Einzigartigkeit und Verwendbarkeit; fehlen sie noch, ist das
+        -- Ergebnis vorlaeufig und wird nicht festgehalten
+        data.partial = (lines == nil and tooltipsExist) or nil
         local scan = Stats.ScanLines(lines)
         local withExtras = EG:Get("includeEnchants") ~= false
         local stats, extra = Stats.Merge(apiStats, scan, withExtras)
@@ -171,7 +179,9 @@ function Items.Get(linkOrID)
         for k, v in pairs(scan.base) do
             if v > (data.baseStats[k] or 0) then data.baseStats[k] = v end
         end
-        data.stats, data.extraStats, data.unknown, data.sockets = stats, extra, unknown, sockets
+        -- Freie Sockel sind ein Edelsteinwert: wer Steine nicht mitrechnet, rechnet auch die leeren Plaetze nicht
+        data.stats, data.extraStats, data.unknown = stats, extra, unknown
+        data.sockets = withExtras and sockets or 0
         data.hasExtraStats = next(extra) ~= nil
         data.unique = scan.unique and true or false
         data.scan = scan
@@ -196,6 +206,17 @@ function Items.Get(linkOrID)
     else
         data.reqLevel = data.minLevel or 0
     end
+
+    if data.partial then
+        local tries = (partialTries[key] or 0) + 1
+        partialTries[key] = tries
+        if tries <= MAX_PARTIAL_TRIES then
+            -- Nicht festhalten: in einem Augenblick alles neu berechnen lassen, dann stehen die Zeilen meist da
+            EG:Debounce("itemsPartial", 0.5, function() EG:Fire("ITEMS_LOADED") end)
+            return data
+        end
+    end
+    partialTries[key] = nil
 
     cacheCount = cacheCount + 1
     if cacheCount > 1500 then
@@ -225,8 +246,13 @@ end
 -- 05  Ereignisse
 ------------------------------------------------------------------------------
 
-EG:On("GET_ITEM_INFO_RECEIVED", function(_, id)
+EG:On("GET_ITEM_INFO_RECEIVED", function(_, id, success)
     if id then requested[id] = nil end
+    if success == false then
+        -- Der Client kennt den Gegenstand nicht: nicht noch einmal fragen, nichts neu berechnen lassen
+        if id then failed[id] = true end
+        return
+    end
     EG:Debounce("itemsLoaded", 0.25, function() EG:Fire("ITEMS_LOADED") end)
 end)
 

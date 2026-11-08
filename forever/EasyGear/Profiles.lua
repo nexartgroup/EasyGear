@@ -56,25 +56,24 @@ function Profiles.InvalidateTalents()
     talentCache = nil
 end
 
+-- Die drei Baeume einer Klasse: Index 1..3 in der Reihenfolge, in der das Talentfenster sie zeigt.
+-- GetNumSpecializationsForClassID wird nicht befragt: in Forever kann die Zahl der "Spezialisierungen" einer
+-- Klasse kleiner sein als die der Baeume (die Talentvorlage ist eine je Klasse).
+local TREES = 3
+
+-- Rollen (und, wenn der Client sie fuellt, die Punkte) aus C_SpecializationInfo.GetSpecializationInfo
 local function ReadSpecInfo()
     local SI = C_SpecializationInfo
     local get = SI and SI.GetSpecializationInfo
     if type(get) ~= "function" then return nil end
 
-    local _, _, classID = UnitClass("player")
-    local count = 3
-    if SI and SI.GetNumSpecializationsForClassID and classID then
-        local ok, n = pcall(SI.GetNumSpecializationsForClassID, classID)
-        if ok and type(n) == "number" and n > 0 then count = n end
-    end
-
     local points, roles, known = {}, {}, false
-    for i = 1, count do
-        local ok, _, _, _, _, role, _, pointsSpent = pcall(get, i)
-        if ok and type(pointsSpent) == "number" then
-            points[i] = pointsSpent
-            roles[i] = role
+    for i = 1, TREES do
+        local ok, specId, _, _, _, role, _, pointsSpent = pcall(get, i)
+        if ok and specId then
             known = true
+            points[i] = tonumber(pointsSpent) or 0
+            roles[i] = role
         else
             points[i] = 0
         end
@@ -83,23 +82,25 @@ local function ReadSpecInfo()
     return points, roles
 end
 
+-- Punkte je Baum aus den Talentgruppen des aktiven Talentsatzes - so zaehlt auch das Talentfenster
 local function ReadTraitGroups()
     local SI, T = C_SpecializationInfo, C_Traits
     if not (SI and T and SI.GetActiveSpecGroup and SI.GetCombatConfigIDForSpecGroup
             and T.GetConfigInfo and T.GetGroupDisplayInfoByTreeID and T.GetGroupCurrencyInfo) then
         return nil
     end
-    local ok, group = pcall(SI.GetActiveSpecGroup)
-    if not ok or not group then return nil end
+    local group = SI.GetActiveSpecGroup()
+    if not group then return nil end
     local configID = SI.GetCombatConfigIDForSpecGroup(group)
     if not configID then return nil end
     local info = T.GetConfigInfo(configID)
     local treeID = info and info.treeIDs and info.treeIDs[1]
     if not treeID then return nil end
 
+    -- Das Talentfenster von Forever legt die Kopfzeilen in genau dieser Reihenfolge von links nach rechts
+    -- (Blizzard_PlayerSpells/Camelot/ClassTalents), also ist die Listenreihenfolge die Baumreihenfolge
     local displays = T.GetGroupDisplayInfoByTreeID(treeID)
     if type(displays) ~= "table" or #displays == 0 then return nil end
-    tsort(displays, function(a, b) return (a.orderIndex or 0) < (b.orderIndex or 0) end)
 
     local groupIDs = {}
     for i, d in ipairs(displays) do groupIDs[i] = d.groupID end
@@ -116,39 +117,65 @@ local function ReadTraitGroups()
             end
         end
     end
-    return points, {}
+    return points
 end
 
+-- Der Baum, den der Client als Hauptbaum fuehrt (das Charakterfenster zeigt seinen Namen); ohne Punktzahl
 local function ReadSelectedSpec()
     local SI = C_SpecializationInfo
     local get = SI and SI.GetSpecialization
     if type(get) ~= "function" then return nil end
-    local ok, index = pcall(get)
-    if not ok or type(index) ~= "number" or index < 1 then return nil end
+    local index = get()
+    if type(index) ~= "number" or index < 1 or index > TREES then return nil end
     local points = {}
-    for i = 1, 3 do points[i] = (i == index) and MIN_POINTS or 0 end
-    return points, {}
+    for i = 1, TREES do points[i] = (i == index) and MIN_POINTS or 0 end
+    return points
+end
+
+local function Safe(fn)
+    local ok, a, b = pcall(fn)
+    if ok then return a, b end
+    return nil
+end
+
+local function Sum(points)
+    local sum = 0
+    for i = 1, #(points or {}) do sum = sum + (points[i] or 0) end
+    return sum
 end
 
 --[[ Rueckgabe: { points = { [1..n] }, total, tab = dominanter Baum | nil, role = API-Rolle des Baums | nil, source }
-     oder nil, wenn der Client nichts herausgibt.                                                      ]]
+     oder nil, wenn der Client gar nichts herausgibt.
+
+     Mehrere Quellen, die erste mit Punkten gewinnt (eine, die nur Nullen liefert, ist keine Antwort - der Client
+     fuellt die Punkte in GetSpecializationInfo womoeglich nicht):
+       "traits"    C_Traits-Gruppen des aktiven Talentsatzes (wie das Talentfenster)
+       "specinfo"  C_SpecializationInfo.GetSpecializationInfo(i).pointsSpent
+       "selected"  C_SpecializationInfo.GetSpecialization(): nur der Hauptbaum
+     Die Rollen der Baeume kommen immer aus GetSpecializationInfo.                                           ]]
 function Profiles.Talents()
     if talentCache ~= nil then return talentCache or nil end
 
-    local points, roles, source = ReadSpecInfo()
-    if points then
-        source = "specinfo"
-    else
-        points, roles = ReadTraitGroups()
-        if points then source = "traits"
-        else
-            points, roles = ReadSelectedSpec()
-            if points then source = "selected" end
+    local infoPoints, roles = Safe(ReadSpecInfo)
+    local sources = {
+        { "traits", (Safe(ReadTraitGroups)) },
+        { "specinfo", infoPoints },
+        { "selected", (Safe(ReadSelectedSpec)) },
+    }
+
+    local points, source, anyAnswer
+    for _, s in ipairs(sources) do
+        if s[2] then
+            anyAnswer = anyAnswer or s
+            if Sum(s[2]) > 0 then points, source = s[2], s[1] break end
         end
     end
     if not points then
-        talentCache = false
-        return nil
+        if not anyAnswer then
+            talentCache = false
+            return nil
+        end
+        points, source = anyAnswer[2], anyAnswer[1]       -- eine Quelle antwortet, aber ohne Punkte: keine Talente
     end
 
     local total, bestTab, bestPoints = 0, nil, 0
@@ -435,7 +462,7 @@ function Profiles.CreateCustom(name, baseID, class)
         class = class or Profiles.PlayerClass(),
         role = source and source.role or "MELEE",
         hands = source and source.hands or nil,
-        kind = "CUSTOM",
+        kind = source and source.kind or "CUSTOM",          -- Derive (Zauberschaden/Heilung) haengt an der Art
         desc = source and (L.PROFILE .. ": " .. Profiles.Name(source)) or "",
         weights = weights,
     }
@@ -492,6 +519,9 @@ end
 -- 06  Ereignisse
 ------------------------------------------------------------------------------
 
-EG:On("PLAYER_TALENT_UPDATE", function() EG:Debounce("talents", 0.3, function() EG:InvalidateAll() end) end)
-EG:On("ACTIVE_TALENT_GROUP_CHANGED", function() EG:Debounce("talents", 0.3, function() EG:InvalidateAll() end) end)
-EG:On("PLAYER_LEVEL_UP", function() EG:Debounce("talents", 0.3, function() EG:InvalidateAll() end) end)
+-- Talente koennen beim Anmelden noch nicht gelesen werden; jeder dieser Anlaesse liest sie neu
+local function TalentsChanged() EG:Debounce("talents", 0.3, function() EG:InvalidateAll() end) end
+for _, event in ipairs({ "PLAYER_TALENT_UPDATE", "ACTIVE_TALENT_GROUP_CHANGED", "TRAIT_CONFIG_UPDATED",
+                         "PLAYER_LEVEL_UP", "PLAYER_ENTERING_WORLD" }) do
+    EG:On(event, TalentsChanged)
+end

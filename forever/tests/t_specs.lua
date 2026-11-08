@@ -81,4 +81,13 @@ return function(T)
             end
         end
     end)
+
+    T.test("specs: a caster tree carries no feral attack power", function()
+        local W = T.world()
+        for _, spec in ipairs(W.EG.Specs.CLASS.DRUID) do
+            if spec.role == "CASTER" or spec.role == "HEAL" then
+                T.eq(spec.w.FAP, nil, spec.id .. " has no use for feral attack power")
+            end
+        end
+    end)
 end

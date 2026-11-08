@@ -42,6 +42,23 @@ local function NameOf(frame)
     end
 end
 
+-- Die 19 Ausruestungsplaetze mit ihren Platznummern; die Knoepfe heissen Character<Name>Slot (Charakterfenster)
+-- und Inspect<Name>Slot (Inspektion). Character<...>Slot gibt es auch fuer Taschen und Munition - die zaehlen nicht.
+local SLOT_OF_NAME = {
+    Head = 1, Neck = 2, Shoulder = 3, Shirt = 4, Chest = 5, Waist = 6, Legs = 7, Feet = 8, Wrist = 9, Hands = 10,
+    Finger0 = 11, Finger1 = 12, Trinket0 = 13, Trinket1 = 14, Back = 15, MainHand = 16, SecondaryHand = 17,
+    Ranged = 18, Tabard = 19,
+}
+
+-- Rueckgabe: "Character" | "Inspect", Platznummer - oder nil
+function Contexts.SlotOfName(name)
+    if type(name) ~= "string" then return nil end
+    local kind, base = smatch(name, "^(Character)(%a+%d?)Slot$")
+    if not kind then kind, base = smatch(name, "^(Inspect)(%a+%d?)Slot$") end
+    if kind and SLOT_OF_NAME[base] then return kind, SLOT_OF_NAME[base] end
+    return nil
+end
+
 local function Classify(button)
     if type(button) ~= "table" then return false end
 
@@ -51,7 +68,7 @@ local function Classify(button)
 
     local name = NameOf(button)
     if type(name) == "string" then
-        if smatch(name, "^Character%a+%d?Slot$") then return "char" end
+        if Contexts.SlotOfName(name) == "Character" then return "char" end
         if smatch(name, "^TradeRecipientItem%dItemButton$") then return "trade" end
         if smatch(name, "^OpenMailAttachmentButton%d+$") then return "mail" end
     end
@@ -95,6 +112,14 @@ local function ResolveLink(ctx, button, idOrLink)
         local info = button.itemInfo
         if info and type(info.hyperlink) == "string" and info.hyperlink ~= "" then return info.hyperlink end
         return IsLinkOrID(idOrLink) and idOrLink or nil
+    elseif ctx == "mail" then
+        -- Blizzard uebergibt nur die Gegenstandsnummer; der Link (mit Zufallsendung, Edelsteinen) steht in der Post
+        local getter, inbox = _G.GetInboxItemLink, _G.InboxFrame
+        if type(getter) == "function" and type(inbox) == "table" and inbox.openMailID and button.GetID then
+            local ok, link = pcall(getter, inbox.openMailID, button:GetID())
+            if ok and IsLinkOrID(link) then return link end
+        end
+        return IsLinkOrID(idOrLink) and idOrLink or nil
     elseif ctx == "quest" then
         -- Blizzard gibt hier den Link (Angebot) oder die Gegenstandsnummer (Questlog) mit; die Kennung des
         -- Knopfes ist in diesem Augenblick noch die des vorigen Gebrauchs
@@ -108,26 +133,32 @@ end
 -- 03  Hinweise am Charakterfenster
 ------------------------------------------------------------------------------
 
-local hintCache = nil
+-- Platz -> Eintrag; .ready sagt, dass die Taschen durchsucht wurden. Der Speicher ist bei Core angemeldet: alles, was
+-- die Ergebnisse veraltet (Ausruestung, Profil, Einstellungen, geladene Gegenstaende), leert ihn sofort mit.
+local hintCache = {}
+EG:RegisterCache(hintCache)
 
-function Contexts.InvalidateHints() hintCache = nil end
+function Contexts.InvalidateHints()
+    for k in pairs(hintCache) do hintCache[k] = nil end
+end
 
 -- Der beste Kandidat aus den Taschen fuer einen Ausruestungsplatz (oder nil)
 function Contexts.SlotHint(slot)
-    if not hintCache then
+    if not hintCache.ready then
         local ok, best = pcall(Recommend.SlotHints)
-        hintCache = ok and best or {}
+        if ok and type(best) == "table" then
+            for k, v in pairs(best) do hintCache[k] = v end
+        end
+        hintCache.ready = true
     end
     return hintCache[slot]
 end
 
-EG:Listen("INVALIDATED", Contexts.InvalidateHints)
+-- Was in den Taschen liegt, aendert nur die Hinweise am Charakterfenster; die Vergleichsergebnisse selbst
+-- haengen von der Ausruestung ab, nicht vom Inhalt der Taschen
 EG:On("BAG_UPDATE_DELAYED", function()
-    hintCache = nil
-    EG:Debounce("charHints", 0.3, function()
-        EG:InvalidateComparisons()
-        EG:Fire("REFRESH")
-    end)
+    Contexts.InvalidateHints()
+    EG:Debounce("charHints", 0.3, function() EG:Fire("REFRESH") end)
 end)
 
 ------------------------------------------------------------------------------
@@ -155,6 +186,7 @@ function Contexts.UpdateQuestBest()
     local rewards = qi and qi.rewardsFrame
     local buttons = rewards and rewards.RewardButtons
     if type(buttons) ~= "table" then return end
+    if rewards.IsVisible and not rewards:IsVisible() then return end
 
     local entries, byIndex = {}, {}
     for _, b in ipairs(buttons) do
@@ -227,14 +259,21 @@ local function OnMerchantItem(frame, link)
     Marks.Set(button, IsLinkOrID(link) and link or nil, { ctx = "merchant" })
 end
 
--- Der Link zu einem Wuerfelfenster kommt aus den Tooltip-Daten der Oberflaeche (so zeigt auch der Tooltip
--- des Fensters den Gegenstand; GetLootRollItemLink benutzt der Forever-Client nicht mehr)
+-- Der Link zu einem Wuerfelfenster: GetLootRollItemLink (so klickt auch das Fenster den Gegenstand an,
+-- GroupLootFrame.xml), sonst die Tooltip-Daten der Oberflaeche
 local function RollLink(rollID)
-    if not (C_TooltipInfo and C_TooltipInfo.GetLootRollItem) then return nil end
-    local ok, data = pcall(C_TooltipInfo.GetLootRollItem, rollID)
-    if not (ok and type(data) == "table") then return nil end
-    if type(data.hyperlink) == "string" and data.hyperlink ~= "" then return data.hyperlink end
-    if type(data.id) == "number" then return data.id end
+    local getter = _G.GetLootRollItemLink
+    if type(getter) == "function" then
+        local ok, link = pcall(getter, rollID)
+        if ok and IsLinkOrID(link) then return link end
+    end
+    if C_TooltipInfo and C_TooltipInfo.GetLootRollItem then
+        local ok, data = pcall(C_TooltipInfo.GetLootRollItem, rollID)
+        if ok and type(data) == "table" then
+            if type(data.hyperlink) == "string" and data.hyperlink ~= "" then return data.hyperlink end
+            if type(data.id) == "number" then return data.id end
+        end
+    end
     return nil
 end
 
@@ -259,5 +298,9 @@ EG:OnLoad("contexts", function()
     Hook("itembuttons", "SetItemButtonQuality", OnItemButton)
     Hook("merchant", "MerchantFrameItem_UpdateQuality", OnMerchantItem)
     Hook("rolls", "GroupLootFrame_SetupItemDisplay", OnRollItem)
-    Hook("quest", "QuestInfo_ShowRewards", ScheduleQuestBest)
 end)
+
+-- QuestInfo_ShowRewards wird hier nicht eingehakt: QuestInfo_Display ruft die Funktionen aus den Vorlagentabellen
+-- auf, die beim Laden entstanden sind. Die Belohnungsknoepfe selbst melden sich ueber SetItemButtonQuality
+-- (OnItemButton plant die Auswahl); danach ordnet jedes REFRESH sie neu ein, falls ein Gegenstand spaeter geladen hat.
+EG:Listen("REFRESH", function() ScheduleQuestBest() end)

@@ -321,7 +321,7 @@ Specs.CLASS.DRUID = {
     {
         id = "DRUID_BALANCE", tab = 1, auto = true, role = "CASTER", kind = "SPEC",
         w = { SP = 1.00, HIT = 1.25, HASTE = 0.90, CRIT = 0.70, INT = 0.50, SPI = 0.45,
-              FAP = 0.20, STA = 0.10, ARMOR = 0.01, DPS = 0.5 },
+              STA = 0.10, ARMOR = 0.01, DPS = 0.5 },
     },
     {
         id = "DRUID_CAT", tab = 2, auto = true, role = "MELEE", kind = "SPEC",

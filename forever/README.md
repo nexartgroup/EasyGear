@@ -128,7 +128,10 @@ general ones (*Leveling (neutral)* and *Item level only*).
 **Automatic selection** (default): the tree with the most talent points decides (at least 5 points).
 Below the maximum level the *Leveling* profile of your class is used instead - except for tank and
 healer trees, whose weights differ too much (`/eg autolevel off` to always use the tree profile).
-Druids and similar classes with two profiles in one tree choose by the role the client gives the tree.
+A tree with two profiles (the Druid's second tree has *Cat* and *Bear*; the Warrior's Fury tree has a dual-wield
+and a two-hand variant) is resolved by the role the client reports for the tree (tank, healer), then by the weapons
+you carry, otherwise the first profile is used - for that Druid tree this is *Cat*, so choose *Bear* yourself
+(`/eg profile DRUID_BEAR`) if the client does not report the tree as a tank tree.
 Without talent information the addon uses *All-round* (maximum level) or *Leveling*.
 
 **Custom profiles** are made in the profile window: pick any profile, press *Edit*, change the weights
@@ -141,8 +144,8 @@ Stats the addon does not know can be weighted in a custom profile by their raw n
 
 * Rings and trinkets are compared with both slots; the one that gains most is the target.
 * A one-hand weapon may go to the off hand if your character can dual wield *and* the profile wants it
-  (tanks, healers and casters only when a weapon is already in the off hand); off-hand weapons count
-  half of their damage.
+  (tanks, healers and casters only when a weapon is already in the off hand; never while a shield or
+  held-in-off-hand item is worn); off-hand weapons count half of their damage.
 * A two-hander is compared with main hand plus off hand together; a shield or off-hand item while a
   two-hander is worn is compared with that two-hander.
 * Unique items: the second copy replaces the first.
@@ -152,15 +155,16 @@ Stats the addon does not know can be weighted in a custom profile by their raw n
 
 *Options > AddOns > EasyGear*: marker groups (bags/bank, vendors/loot/rolls/trade/mail, quest rewards,
 character window), tooltip parts, enchants, Leveling profile, item level weight and scaling, minimum
-gain, the profile choice, buttons for the windows and a reset. Everything takes effect immediately.
+gain, the profile choice and a reset button. Everything takes effect immediately - also when you change
+a value by chat command while the page is open.
 The addon-compartment entry on the minimap: left click opens the comparison window, right click the settings.
 
 ## Troubleshooting
 
-`/eg status` shows the interface hooks the addon installed (`itembuttons`, `merchant`, `rolls`, `quest`,
+`/eg status` shows the interface hooks the addon installed (`itembuttons`, `merchant`, `rolls`,
 `tooltip`, `settings`, `shiftclick`): a red name with a reason means that part of the client interface
 was not found and that feature is off. It also prints the detected talent points and the last internal error.
-`/eg debug on` prints internal errors as they happen.
+Internal errors are printed once in the chat as `EasyGear[label]: message`.
 
 If an item scores oddly, `/eg parse <item link>` shows the values read from it; `/eg unknown` shows
 stats that are read but not scored.
@@ -174,8 +178,8 @@ and the exact text of any Lua error (`/console scriptErrors 1` shows them).
 Run from this folder (`forever/`):
 
 ```
-lua5.1 tests/run.lua                 # 190 unit tests on a model of the client (Lua 5.1 only)
-python3 tests/mutate.py              # mutation check: breaks the addon in ~85 small ways, the tests must notice
+lua5.1 tests/run.lua                 # unit tests on a model of the client (Lua 5.1 only), ~240 checks
+python3 tests/mutate.py              # mutation check: breaks the addon in ~130 small ways, the tests must notice
 tools/check.sh <Interface/AddOns of the Forever UI source>
                                      # luacheck against a std built from the UI source + checks that every
                                      # method, event, template, font, atlas and global the addon names exists
@@ -200,6 +204,13 @@ What this proves and what it does not:
 * The three talent trees are assumed to be in the order the client shows them (tree 1, 2, 3 of the class).
   If automatic detection picks the wrong profile, choose one yourself and check `/eg status`.
 * Item effects (procs, on-use, set bonuses) are not scored; stats written as percentages are not parsed.
+* Every item gets the item level term, also one without scored stats; an item that adds nothing else
+  still has a score of item level x weight.
+* Two-handers are always compared with main hand plus off hand together; carrying two two-handers
+  (Titan's Grip style) is not modelled.
+* Whether you can use an item (class, armor type, reputation, profession) is read from the red lines of its
+  tooltip when the addon first looks at the item; it is not re-evaluated when you gain reputation or a skill
+  until the next level-up or `/reload`.
 * The auction house is not marked; own trade items and sent mail are not marked.
 * Heirlooms, gem or enchant recommendations and automatic equipping do not exist by design.
 * Texts: English and German are complete; other languages are partly translated (missing texts show in English).
@@ -310,6 +321,10 @@ Profil je Talentbaum, ein *Leveln*- und ein *Allround*-Profil, dazu zwei klassen
 **Automatische Wahl** (Standard): der Talentbaum mit den meisten Punkten entscheidet (mindestens 5 Punkte). Unter der
 Höchststufe gilt stattdessen das *Leveln*-Profil deiner Klasse - außer bei Tank- und Heilerbäumen
 (`/eg autolevel off`: immer das Baumprofil). Ohne Talentangaben: *Allround* (Höchststufe) bzw. *Leveln*.
+Hat ein Baum zwei Profile (der zweite Druidenbaum: *Katze* und *Bär*; der Furor-Baum der Krieger: Zweihand- und
+Beidhändig-Variante), entscheidet die Rolle, die der Client für den Baum meldet (Tank, Heiler), dann die getragenen
+Waffen, sonst das erste Profil - beim Druidenbaum also *Katze*. Meldet der Client den Baum nicht als Tankbaum,
+wähle *Bär* selbst (`/eg profile DRUID_BEAR`).
 
 **Eigene Profile** entstehen im Profilfenster: ein beliebiges Profil wählen, *Bearbeiten*, Gewichte ändern
 (Dezimalkomma geht), *Als neues Profil speichern*. Eigene Profile lassen sich dort überschreiben, umbenennen und
@@ -320,20 +335,21 @@ sich mit ihrem rohen Namen gewichten: `/eg unknown` listet sie, `/eg weight ITEM
 
 Ringe und Schmuck werden mit beiden Plätzen verglichen. Eine Einhandwaffe darf in die Nebenhand, wenn der
 Charakter beidhändig kämpfen kann und das Profil es will (Tanks, Heiler, Zauberer nur, wenn dort schon eine
-Waffe liegt); Nebenhand-Waffen zählen halb. Eine Zweihandwaffe wird mit Waffen- plus Nebenhand verglichen.
+Waffe liegt; nie, solange ein Schild oder Buch in der Nebenhand liegt); Nebenhand-Waffen zählen halb. Eine Zweihandwaffe wird mit Waffen- plus Nebenhand verglichen.
 Einzigartige Items: das zweite Exemplar ersetzt das erste. Hemd und Wappenrock werden nie verglichen.
 
 ## Einstellungen
 
 *Optionen > AddOns > EasyGear*: Markierungsgruppen, Tooltip-Teile, Verzauberungen, Leveln-Profil, Stufengewicht
-und -skalierung, Mindestzugewinn, Profilwahl, Knöpfe für die Fenster und Zurücksetzen. Alles wirkt sofort.
+und -skalierung, Mindestzugewinn, Profilwahl und ein Zurücksetzen-Knopf. Alles wirkt sofort - auch wenn du einen
+Wert per Chatbefehl änderst, während die Seite offen ist.
 Der Eintrag im Addon-Fach der Minimap: Linksklick Vergleichsfenster, Rechtsklick Einstellungen.
 
 ## Fehlersuche
 
-`/eg status` zeigt die Oberflächen-Anbindungen (`itembuttons`, `merchant`, `rolls`, `quest`, `tooltip`, `settings`,
+`/eg status` zeigt die Oberflächen-Anbindungen (`itembuttons`, `merchant`, `rolls`, `tooltip`, `settings`,
 `shiftclick`): ein roter Name mit Grund heißt, dass dieser Teil der Client-Oberfläche nicht gefunden wurde und die
-Funktion aus ist. Dazu die erkannten Talentpunkte und der letzte interne Fehler. `/eg debug on` gibt interne Fehler aus.
+Funktion aus ist. Dazu die erkannten Talentpunkte und der letzte interne Fehler. Interne Fehler erscheinen einmalig im Chat als `EasyGear[Name]: Meldung`.
 
 **Fehler melden:** bitte die Ausgabe von `/eg status` mitschicken (Clientversion, erkannte Talentpunkte, welche
 Anbindungen funktionieren), bei falsch bewerteten Items `/eg parse <Itemlink>` und den genauen Text eines
@@ -357,6 +373,12 @@ im Spiel**.
 * Die drei Talentbäume werden in der Reihenfolge angenommen, in der der Client sie zeigt. Wählt die Erkennung ein
   falsches Profil, ein Profil selbst wählen und `/eg status` prüfen.
 * Item-Effekte (Procs, Benutzen, Setboni) werden nicht bewertet; Prozentangaben in Texten nicht gelesen.
+* Jedes Item bekommt den Stufenanteil, auch eines ohne bewertete Werte: es hat dann mindestens Stufe x Gewicht.
+* Zweihandwaffen werden immer mit Waffen- plus Nebenhand zusammen verglichen; zwei Zweihänder gleichzeitig
+  (Titanengriff-Art) sind nicht abgebildet.
+* Ob du ein Item benutzen kannst (Klasse, Rüstungsart, Ruf, Beruf), liest das Addon aus den roten Zeilen des Tooltips,
+  wenn es das Item zum ersten Mal ansieht; nach Rufgewinn oder neuer Fertigkeit gilt das erst nach dem nächsten
+  Stufenaufstieg oder `/reload`.
 * Das Auktionshaus wird nicht markiert. Heirlooms, Edelstein- oder Verzauberungsempfehlungen und automatisches
   Anlegen gibt es absichtlich nicht.
 * Texte: Englisch und Deutsch vollständig; andere Sprachen teilweise übersetzt (Fehlendes erscheint englisch).

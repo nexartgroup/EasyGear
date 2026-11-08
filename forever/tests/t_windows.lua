@@ -246,7 +246,9 @@ return function(T)
         -- delete with confirmation
         f.btnDelete.__scripts.OnClick(f.btnDelete)
         dlg = W.state.popups[#W.state.popups]
-        T.eq(dlg.which, "GENERIC_CONFIRMATION") T.has(dlg.data.text, "Harder Hitter")
+        T.eq(dlg.which, "GENERIC_CONFIRMATION")
+        T.eq(dlg.data.text, W.EG.L.P_DELETE_PROMPT, "the client formats this text with the argument")
+        T.eq(dlg.data.text_arg1, "Harder Hitter")
         T.ok(P.Get(id), "still there until confirmed")
         dlg.data.callback()
         T.eq(P.Get(id), nil)
@@ -340,5 +342,111 @@ return function(T)
         W.EG.Window.SetItem(W.I.better)
         W.EG.ProfileWindow.Select("WARRIOR_PROT")
         T.has(f.note:GetText(), W.EG.L.P_ITEM_LINE)
+    end)
+
+    T.test("window: an item whose worn counterpart is still loading shows the loading text, not an error", function()
+        local W = world()
+        W.state.items[2001].uncached = true                 -- the worn chestplate
+        W.EG.Items.Wipe()
+        W.EG.Window.SetItem(W.I.better)
+        local f = W.env.EasyGearWindow
+        T.eq(f.cand.name:GetText(), W.EG.L.ITEM_LOADING)
+        T.eq(f.verdict:GetText(), "")
+        T.eq(W.EG.lastError, nil, "no error")
+        W.state.items[2001].uncached = nil
+        W.fire("GET_ITEM_INFO_RECEIVED", 2001, true)
+        W.flush()
+        T.eq(f.cand.name:GetText(), "Better Chestplate", "the next refresh fills it in")
+        T.eq(W.EG.lastError, nil)
+    end)
+
+    T.test("window: an item the client does not know says so after the client gave up", function()
+        local W = world()
+        W.EG.Window.SetItem(88888)
+        local f = W.env.EasyGearWindow
+        T.eq(f.cand.name:GetText(), W.EG.L.ITEM_LOADING)
+        W.fire("GET_ITEM_INFO_RECEIVED", 88888, false)
+        W.EG.Window.Refresh()
+        T.eq(f.cand.name:GetText(), W.EG.L.INVALID_ITEM)
+    end)
+
+    T.test("window: only items are accepted - numbers, item strings and links, not spells or junk", function()
+        local W = world()
+        local Wd = W.EG.Window
+        T.eq(Wd.SetItem("garbage"), false) T.eq(Wd.SetItem(0), false) T.eq(Wd.SetItem(-3), false)
+        T.eq(Wd.SetItem({}), false) T.eq(Wd.SetItem("|cff71d5ff|Hspell:133|h[Fireball]|h|r"), false)
+        T.eq(Wd.Link(), nil)
+        T.eq(Wd.SetItem("item:8001"), true)
+        T.eq(W.env.EasyGearWindow.cand.name:GetText(), "Better Chestplate")
+        T.eq(Wd.SetItem(8001), true) T.eq(Wd.SetItem(W.I.better), true)
+        -- shift-clicking other kinds of links leaves the window alone
+        Wd.Clear()
+        W.state.shift = true
+        W.env.HandleModifiedItemClick("|cff71d5ff|Hspell:133|h[Fireball]|h|r")
+        W.env.HandleModifiedItemClick("|cffffff00|Hquest:1234:80|h[A Quest]|h|r")
+        W.env.HandleModifiedItemClick(nil)
+        T.eq(W.env.EasyGearWindow.cand.name:GetText(), W.EG.L.DROP_HINT)
+        T.eq(W.EG.lastError, nil)
+    end)
+
+    T.test("window: script errors are caught and reported once", function()
+        local W = world()
+        W.EG.Window.SetItem(W.I.better)
+        local f = W.env.EasyGearWindow
+        W.env.GameTooltip.SetHyperlink = function() error("boom") end
+        W.clearChat()
+        T.eq(pcall(f.cand.button.__scripts.OnEnter, f.cand.button), true, "the script itself does not raise")
+        T.eq(W.EG.lastError.label, "window")
+        T.has(W.chatText(), "boom")
+        W.clearChat()
+        pcall(f.cand.button.__scripts.OnEnter, f.cand.button)
+        T.eq(W.chatText(), "", "the same message is not repeated")
+    end)
+
+    T.test("window: item names stay on one line, hints may wrap", function()
+        local W = world()
+        W.EG.Window.SetItem(W.I.better)
+        local f = W.env.EasyGearWindow
+        T.eq(f.cand.name.__wordWrap, false, "an item name") T.eq(f.eq.name.__wordWrap, false)
+        T.eq(f.cand.info.__wordWrap, false)
+        W.EG.Window.Clear()
+        T.eq(f.cand.name.__wordWrap, true, "the hint")
+    end)
+
+    T.test("profile window: a profile name with a percent sign cannot break the delete prompt", function()
+        local W = world()
+        local PW, P = W.EG.ProfileWindow, W.EG.Profiles
+        local f = profileWindow(W)
+        local id = P.CreateCustom("50% Crit", "WARRIOR_ARMS")
+        PW.Select(id)
+        f.btnDelete.__scripts.OnClick(f.btnDelete)
+        local dlg = W.state.popups[#W.state.popups]
+        local ok, text = pcall(string.format, dlg.data.text, dlg.data.text_arg1, dlg.data.text_arg2)
+        T.eq(ok, true, "the client formats the text with the arguments")
+        T.has(text, "50% Crit")
+        dlg.data.callback()
+        T.eq(P.Get(id), nil)
+    end)
+
+    T.test("profile window: weight input ignores nonsense, empty clears", function()
+        local W = world()
+        local PW, P = W.EG.ProfileWindow, W.EG.Profiles
+        profileWindow(W)
+        local id = P.CreateCustom("Mine", "WARRIOR_ARMS")
+        PW.Select(id)
+        local before = P.Get(id).weights.STR
+        T.ok(before and before > 0)
+        PW.ToggleEdit()
+        for _, junk in ipairs({ "abc", "nan", "inf", "-inf", "1..2" }) do PW.ApplyEdit("STR", junk) end
+        PW.SaveOver()
+        T.eq(P.Get(id).weights.STR, before, "nonsense keeps the old weight")
+        PW.ToggleEdit()
+        PW.ApplyEdit("STR", "  ")
+        PW.SaveOver()
+        T.eq(P.Get(id).weights.STR, nil, "empty removes the weight")
+        PW.ToggleEdit()
+        PW.ApplyEdit("STR", "1,25")
+        PW.SaveOver()
+        T.eq(P.Get(id).weights.STR, 1.25)
     end)
 end

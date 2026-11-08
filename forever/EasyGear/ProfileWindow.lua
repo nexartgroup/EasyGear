@@ -98,7 +98,7 @@ local function AskName(default, onAccept)
         acceptText = _G.ACCEPT,
         cancelText = _G.CANCEL,
         maxLetters = 32,
-        callback = onAccept,
+        callback = EG:Guard("profiles", onAccept),
     })
     if not ok then
         onAccept(default)
@@ -113,10 +113,13 @@ local function AskName(default, onAccept)
     end
 end
 
-local function AskConfirm(text, onAccept)
+--[[ text ist ein Formattext mit %s; arg1 kommt als text_arg1 hinein. Die Oberflaeche formatiert selbst
+     (GENERIC_CONFIRMATION: SetFormattedText(text, text_arg1, text_arg2)) - ein frei gewaehlter Profilname mit
+     einem Prozentzeichen darf deshalb nie vorab in den Text eingesetzt werden.                          ]]
+local function AskConfirm(text, arg1, onAccept)
     if type(_G.StaticPopup_ShowCustomGenericConfirmation) == "function" then
         local ok = pcall(_G.StaticPopup_ShowCustomGenericConfirmation, {
-            text = text, callback = onAccept, showAlert = true,
+            text = text, text_arg1 = arg1, callback = EG:Guard("profiles", onAccept), showAlert = true,
         })
         if ok then return end
     end
@@ -208,7 +211,7 @@ local function BuildSide(parent, editable)
     p:SetSize(PANEL_W, 396)
     FlatBox(p, 0, 0, 0, 0.35, { 0.4, 0.4, 0.4, 0.8 })
     p:EnableMouseWheel(true)
-    p:SetScript("OnMouseWheel", function(_, delta) PW.Scroll(delta > 0 and -3 or 3) end)
+    p:SetScript("OnMouseWheel", EG:Guard("profiles", function(_, delta) PW.Scroll(delta > 0 and -3 or 3) end))
     side.panel = p
 
     side.caption = Text(p, "GameFontNormalSmall")
@@ -274,10 +277,10 @@ local function BuildSide(parent, editable)
             eb:SetMaxLetters(7)
             eb:SetTextInsets(3, 4, 0, 0)
             FlatBox(eb, 0.1, 0.1, 0.1, 0.9, { 0.55, 0.5, 0.3, 0.9 })
-            eb:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
-            eb:SetScript("OnEnterPressed", function(s) s:ClearFocus() end)
-            eb:SetScript("OnTabPressed", function(s) s:ClearFocus() end)
-            eb:SetScript("OnEditFocusLost", function(s) PW.ApplyEdit(s.statKey, s:GetText()) end)
+            eb:SetScript("OnEscapePressed", EG:Guard("profiles", function(s) s:ClearFocus() end))
+            eb:SetScript("OnEnterPressed", EG:Guard("profiles", function(s) s:ClearFocus() end))
+            eb:SetScript("OnTabPressed", EG:Guard("profiles", function(s) s:ClearFocus() end))
+            eb:SetScript("OnEditFocusLost", EG:Guard("profiles", function(s) PW.ApplyEdit(s.statKey, s:GetText()) end))
             eb:Hide()
             row.edit = eb
         end
@@ -419,7 +422,7 @@ local function MakeSelector(parent, width, generator, cycle)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     b:SetSize(width, 22)
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    b:SetScript("OnClick", function(_, button) cycle(button == "RightButton" and -1 or 1) end)
+    b:SetScript("OnClick", EG:Guard("profiles", function(_, button) cycle(button == "RightButton" and -1 or 1) end))
     b.GenerateMenu = function() end
     return b
 end
@@ -446,12 +449,13 @@ end
 
 function PW.ApplyEdit(statKey, text)
     if not (state.edit and state.draft and statKey) then return end
-    local v = tonumber((sgsub(text or "", ",", ".")))
-    if not v or v == 0 then
-        state.draft[statKey] = nil
-    else
+    local clean = EG.Trim(sgsub(text or "", ",", "."))
+    local v = tonumber(clean)
+    if clean == "" or v == 0 then
+        state.draft[statKey] = nil                      -- leer oder 0: kein Gewicht
+    elseif v and v == v and v ~= math.huge and v ~= -math.huge then
         state.draft[statKey] = v
-    end
+    end                                                 -- sonst bleibt der alte Wert stehen
     PW.Refresh()
 end
 
@@ -492,7 +496,7 @@ function PW.Delete()
     local spec = Selected()
     if not (spec and spec.custom) then return end
     local id = spec.id
-    AskConfirm(sformat(L.P_DELETE_PROMPT, Profiles.Name(spec)), function()
+    AskConfirm(L.P_DELETE_PROMPT, Profiles.Name(spec), function()
         Profiles.DeleteCustom(id)
         state.edit, state.draft = false, nil
         state.id = nil
@@ -656,8 +660,8 @@ local function Build()
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() SavePosition() end)
+    frame:SetScript("OnDragStart", EG:Guard("profiles", function(self) self:StartMoving() end))
+    frame:SetScript("OnDragStop", EG:Guard("profiles", function(self) self:StopMovingOrSizing() SavePosition() end))
     frame:Hide()
 
     local g = EG.cdb and EG.cdb.profileGui or {}
@@ -700,8 +704,8 @@ local function Build()
     nameBox:SetMaxLetters(32)
     nameBox:SetTextInsets(4, 4, 0, 0)
     FlatBox(nameBox, 0.1, 0.1, 0.1, 0.9, { 0.55, 0.5, 0.3, 0.9 })
-    nameBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
-    nameBox:SetScript("OnEnterPressed", function(s) s:ClearFocus() end)
+    nameBox:SetScript("OnEscapePressed", EG:Guard("profiles", function(s) s:ClearFocus() end))
+    nameBox:SetScript("OnEnterPressed", EG:Guard("profiles", function(s) s:ClearFocus() end))
     nameBox:Hide()
     frame.nameBox = nameBox
 
@@ -726,7 +730,7 @@ local function Build()
             b:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 4)
         end
         b:SetText(text)
-        b:SetScript("OnClick", onClick)
+        b:SetScript("OnClick", EG:Guard("profiles", onClick))
         return b
     end
     frame.btnActivate = Btn(L.P_ACTIVATE, 104, nil, 0, PW.Activate)
@@ -739,10 +743,10 @@ local function Build()
     end)
     frame.btnDelete = Btn(L.P_DELETE, 90, frame.btnSaveNew, 4, PW.Delete)
 
-    frame:SetScript("OnShow", function()
+    frame:SetScript("OnShow", EG:Guard("profiles", function()
         state.class = state.class or Profiles.PlayerClass()
         PW.Rebuild()
-    end)
+    end))
     return frame
 end
 

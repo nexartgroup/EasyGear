@@ -40,7 +40,7 @@ return function(T)
         end
     end)
 
-    T.test("profiles: detection through the trait tree groups keeps the displayed tree order", function()
+    T.test("profiles: detection through the trait tree groups follows the list order of the talent frame", function()
         local _, p = resolve({ class = "WARRIOR", level = 60, talents = talents("traits", { 5, 40, 0 }) })
         T.eq(p.spec.id, "WARRIOR_FURY")
         _, p = resolve({ class = "WARRIOR", level = 60, talents = talents("traits", { 0, 0, 41 }) })
@@ -50,6 +50,48 @@ return function(T)
     T.test("profiles: detection through the selected specialization alone", function()
         local _, p = resolve({ class = "MAGE", level = 60, talents = talents("selected", { 0, 0, 0 }, { selected = 2 }) })
         T.eq(p.spec.id, "MAGE_FIRE")
+    end)
+
+    T.test("profiles: all-zero points from GetSpecializationInfo do not hide the other sources", function()
+        local W = T.world({ class = "DRUID", level = 60, talents = talents("traits", { 0, 41, 0 }, { roles = { "DAMAGER", "TANK", "HEALER" } }) })
+        local t = W.EG.Profiles.Talents()
+        T.eq(t.source, "traits") T.eq(t.tab, 2) T.eq(t.role, "TANK", "roles come from GetSpecializationInfo")
+        T.eq(W.EG.Profiles.Resolve().spec.id, "DRUID_BEAR")
+    end)
+
+    T.test("profiles: all three trees are read even if the client counts fewer specializations", function()
+        local W = T.world({ class = "WARRIOR", level = 60, talents = talents("specinfo", { 5, 40, 0 }, { numSpecs = 1 }) })
+        T.eq(W.EG.Profiles.Resolve().spec.id, "WARRIOR_FURY")
+    end)
+
+    T.test("profiles: an API that raises is skipped, the next source answers", function()
+        local W = T.world({ class = "WARRIOR", level = 60, talents = talents("specinfo", { 40, 5, 0 }) }, function(w)
+            w.env.C_Traits.GetConfigInfo = function() error("client hiccup") end
+            w.env.C_SpecializationInfo.GetSpecialization = function() error("client hiccup") end
+        end)
+        local t = W.EG.Profiles.Talents()
+        T.eq(t.source, "specinfo") T.eq(W.EG.Profiles.Resolve().spec.id, "WARRIOR_ARMS")
+    end)
+
+    T.test("profiles: a source that answers with zeros means no talents, not unknown", function()
+        local W = T.world({ class = "WARRIOR", level = 60, talents = talents("specinfo", { 0, 0, 0 }) })
+        local t = W.EG.Profiles.Talents()
+        T.eq(t.total, 0) T.eq(t.tab, nil)
+        T.eq(W.EG.Profiles.Resolve().spec.id, "WARRIOR_ALLROUND")
+        T.eq(W.EG.Profiles.DominantTab(), nil)
+    end)
+
+    T.test("profiles: talents are read again when the world loads", function()
+        local W = T.world({ class = "WARRIOR", level = 60, talents = talents("specinfo", { 0, 0, 0 }) })
+        T.eq(W.EG.Profiles.Resolve().spec.id, "WARRIOR_ALLROUND")
+        W.state.talents.points = { 40, 5, 0 }
+        W.fire("PLAYER_ENTERING_WORLD")
+        W.flush()
+        T.eq(W.EG.Profiles.Resolve().spec.id, "WARRIOR_ARMS")
+        W.state.talents.points = { 5, 40, 0 }
+        W.fire("TRAIT_CONFIG_UPDATED")
+        W.flush()
+        T.eq(W.EG.Profiles.Resolve().spec.id, "WARRIOR_FURY")
     end)
 
     T.test("profiles: no talent information falls back to all-round at the top level, leveling below", function()
@@ -144,6 +186,8 @@ return function(T)
         T.eq(caster.weights.SPDMG, nil, "derived spell damage and healing are not stored")
         T.eq(caster.weights.SPHEAL, nil)
         T.eq(caster.class, "MAGE") T.eq(caster.role, "CASTER")
+        local derived = P.WeightsFor(caster)
+        T.eq(derived.SPDMG, derived.SP) T.eq(derived.SPHEAL, 0, "a clone of a caster tree profile values no healing power")
 
         P.SetActive(id)
         local sig1 = P.Resolve().sig

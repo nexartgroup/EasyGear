@@ -6,7 +6,7 @@
     Punkte), rechts die des angelegten Gegenstands; bei Ringen, Schmuck und Einhandwaffen schalten
     die Reiter zwischen beiden Plaetzen. Unten stehen Urteil und Hinweise.
 
-    Aufbau mit den Vorlagen der Standard-Oberflaeche (ButtonFrameTemplate, ItemButtonTemplate,
+    Aufbau mit den Vorlagen der Standard-Oberflaeche (ButtonFrameTemplate, ItemButton,
     UIPanelButtonTemplate), damit das Fenster aussieht wie die uebrigen.
 -----------------------------------------------------------------------------]]
 
@@ -62,6 +62,7 @@ local function BuildColumn(parent, x)
     col.info = Text(parent, "GameFontHighlightSmall", "TOPLEFT", x + 48, -28)
     col.info:SetWidth(210)
     col.info:SetJustifyH("LEFT")
+    col.info:SetWordWrap(false)         -- eine Zeile: lange Namen duerfen die Rechnung darunter nicht ueberdecken
     col.score = Text(parent, "GameFontNormalLarge", "TOPLEFT", x, -54)
 
     local y = -80
@@ -113,6 +114,7 @@ end
 
 local function ShowItem(col, item, extraInfo)
     local btn = col.button
+    col.name:SetWordWrap(item == nil)   -- ein Gegenstandsname bleibt einzeilig, die Hinweise darunter duerfen umbrechen
     if item then
         if SetItemButtonTexture then SetItemButtonTexture(btn, item.texture) end
         col.name:SetText(item.name or "?")
@@ -143,12 +145,19 @@ function Window.Refresh()
 
     frame.profileText:SetText(L.PROFILE .. ": " .. Profiles.Resolve().name)
 
-    local item = state.link and Items.Get(state.link)
-    local result = item and Score.Compare(item, true)
+    local item, why
+    if state.link then item, why = Items.Get(state.link) end
+    local result, resultWhy
+    if item then result, resultWhy = Score.Compare(item, true) end
 
-    if not item then
+    -- Kein Gegenstand, oder Daten (auch die des angelegten Gegenstuecks) fehlen noch
+    if not (item and result) then
         ShowItem(frame.cand, nil)
-        frame.cand.name:SetText(state.link and L.ITEM_LOADING or L.DROP_HINT)
+        local hint = L.DROP_HINT
+        if state.link then
+            hint = (why == "invalid" or resultWhy == "invalid") and L.INVALID_ITEM or L.ITEM_LOADING
+        end
+        frame.cand.name:SetText(hint)
         frame.cand.name:SetTextColor(0.7, 0.7, 0.7)
         frame.cand.score:SetText("")
         FillRows(frame.cand, nil)
@@ -219,8 +228,14 @@ function Window.Refresh()
     frame.notes:SetText(table.concat(notes, "\n"))
 end
 
+-- Gegenstandsnummer oder Gegenstandslink? (Umschalt-Klick liefert auch Zauber-, Quest- und andere Links)
+function Window.IsItemRef(v)
+    if type(v) == "number" then return v > 0 end
+    return type(v) == "string" and string.find(v, "item:", 1, true) ~= nil
+end
+
 function Window.SetItem(link)
-    if type(link) ~= "string" and type(link) ~= "number" then return false end
+    if not Window.IsItemRef(link) then return false end
     state.link, state.pick = link, 1
     Window.Open()
     Window.Refresh()
@@ -266,8 +281,8 @@ local function Build()
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() SavePosition() end)
+    frame:SetScript("OnDragStart", EG:Guard("window", function(self) self:StartMoving() end))
+    frame:SetScript("OnDragStop", EG:Guard("window", function(self) self:StopMovingOrSizing() SavePosition() end))
     frame:Hide()
 
     local gui = EG.cdb and EG.cdb.gui or {}
@@ -284,33 +299,33 @@ local function Build()
     frame.cand = BuildColumn(holder, 10)
     frame.eq = BuildColumn(holder, 290)
     frame.cand.button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    frame.cand.button:SetScript("OnReceiveDrag", ReceiveCursorItem)
-    frame.cand.button:SetScript("OnClick", function(_, button)
+    frame.cand.button:SetScript("OnReceiveDrag", EG:Guard("window", ReceiveCursorItem))
+    frame.cand.button:SetScript("OnClick", EG:Guard("window", function(_, button)
         if button == "RightButton" then Window.Clear() else ReceiveCursorItem() end
-    end)
+    end))
     frame.cand.name:SetText(L.DROP_HINT)
 
     for _, col in ipairs({ frame.cand, frame.eq }) do
         local b = col.button
-        b:SetScript("OnEnter", function(self)
+        b:SetScript("OnEnter", EG:Guard("window", function(self)
             if self.link then
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 GameTooltip:SetHyperlink(self.link)
                 GameTooltip:Show()
             end
-        end)
-        b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        end))
+        b:SetScript("OnLeave", EG:Guard("window", function() GameTooltip:Hide() end))
     end
 
     -- Reiter fuer die beiden Plaetze (Ringe, Schmuck, Einhandwaffen)
     frame.tab1 = CreateFrame("Button", nil, holder, "UIPanelButtonTemplate")
     frame.tab1:SetSize(66, 20)
     frame.tab1:SetPoint("TOPLEFT", holder, "TOPLEFT", 410, -52)
-    frame.tab1:SetScript("OnClick", function() state.pick = 1 Window.Refresh() end)
+    frame.tab1:SetScript("OnClick", EG:Guard("window", function() state.pick = 1 Window.Refresh() end))
     frame.tab2 = CreateFrame("Button", nil, holder, "UIPanelButtonTemplate")
     frame.tab2:SetSize(66, 20)
     frame.tab2:SetPoint("TOPLEFT", holder, "TOPLEFT", 480, -52)
-    frame.tab2:SetScript("OnClick", function() state.pick = 2 Window.Refresh() end)
+    frame.tab2:SetScript("OnClick", EG:Guard("window", function() state.pick = 2 Window.Refresh() end))
 
     frame.verdict = Text(holder, "GameFontNormalLarge", "BOTTOMLEFT", 12, 84)
     frame.verdict:SetWidth(WIDTH - 40)
@@ -326,7 +341,7 @@ local function Build()
         b:SetSize(130, 22)
         b:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", x, 4)
         b:SetText(text)
-        b:SetScript("OnClick", onClick)
+        b:SetScript("OnClick", EG:Guard("window", onClick))
         return b
     end
     frame.btnClear = Button(L.BTN_CLEAR, 8, function() Window.Clear() end)
@@ -337,7 +352,7 @@ local function Build()
         if EG.ProfileWindow then EG.ProfileWindow.Toggle() end
     end)
 
-    frame:SetScript("OnShow", function() Window.Refresh() end)
+    frame:SetScript("OnShow", EG:Guard("window", function() Window.Refresh() end))
     return frame
 end
 
@@ -361,7 +376,7 @@ function Window.IsShown() return frame ~= nil and frame:IsShown() end
 EG:OnLoad("window", function()
     if hooksecurefunc and type(_G.HandleModifiedItemClick) == "function" then
         hooksecurefunc("HandleModifiedItemClick", function(link)
-            if frame and frame:IsShown() and IsShiftKeyDown and IsShiftKeyDown() and link then
+            if frame and frame:IsShown() and IsShiftKeyDown and IsShiftKeyDown() and Window.IsItemRef(link) then
                 EG:Try("window", Window.SetItem, link)
             end
         end)

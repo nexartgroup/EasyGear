@@ -37,15 +37,34 @@ local function ParseSwitch(arg, current)
 end
 Slash.ParseSwitch = ParseSwitch
 
+-- Zahl aus der Eingabe (Komma wie Punkt); nil bei Text, nan und unendlich
 local function ParseNumber(text)
     if type(text) ~= "string" or text == "" then return nil end
-    return tonumber((sgsub(text, ",", ".")))
+    local v = tonumber((sgsub(text, ",", ".")))
+    if not v or v ~= v or v == math.huge or v == -math.huge then return nil end
+    return v
 end
 
--- Der erste Gegenstandslink einer Eingabe (mit Farbcode, wenn vorhanden) oder nil
+-- Zahl innerhalb von lo..hi; sonst ein Hinweis im Chat und nil
+local function ReadRange(text, lo, hi)
+    local v = ParseNumber(text)
+    if v and v >= lo and v <= hi then return v end
+    EG:Print(C.warn .. sformat(L.NUM_RANGE, EG.FmtWeight(lo), EG.FmtWeight(hi)) .. C.reset)
+    return nil
+end
+
+-- Der erste Gegenstand einer Eingabe: Link (mit Farbcode, wenn vorhanden) oder "item:123:..." - sonst nil
 local function ExtractLink(text)
     if type(text) ~= "string" then return nil end
     return smatch(text, "(|c%x+|Hitem:.-|h%[.-%]|h|r)") or smatch(text, "(|Hitem:.-|h%[.-%]|h)")
+        or smatch(text, "(item:%d+[%d:%-]*)")
+end
+
+-- Gegenstandsnummer: ganze Zahl ab 1
+local function ParseItemID(text)
+    local id = tonumber(text)
+    if id and id >= 1 and id % 1 == 0 then return id end
+    return nil
 end
 
 ------------------------------------------------------------------------------
@@ -379,7 +398,6 @@ local TOGGLES = {
     tooltip = { "showTooltip",      "OPT_TOOLTIP" },
     stats   = { "showTooltipStats", "OPT_TOOLTIP_STATS" },
     diff    = { "tooltipDiff",      "OPT_DIFF" },
-    debug   = { "debug",            "ST_DEBUG" },
 }
 
 local function Toggle(cmd, rest)
@@ -406,6 +424,11 @@ local function ProfileCommand(rest)
     else
         -- IDs der eingebauten Profile sind gross geschrieben, eigene Profile koennen gemischt sein
         local spec = Profiles.Get(arg) or Profiles.Get(supper(arg))
+        if not spec then
+            for _, candidate in ipairs(Profiles.List()) do
+                if slower(candidate.id) == low then spec = candidate break end
+            end
+        end
         if spec then
             Profiles.SetActive(spec.id)
             ShowProfile(spec)
@@ -453,9 +476,11 @@ local function Reset()
     EG:Print(L.SET_RESET)
 end
 
+-- Erst der Bericht im Chat, dann das Fenster: ein Fehler im Fenster nimmt dem Spieler den Bericht nicht
 local function ReportFor(link)
-    if EG.Window then EG.Window.SetItem(link) end
-    return Slash.PrintReport(link)
+    local ok = Slash.PrintReport(link)
+    if EG.Window then EG:Try("window", EG.Window.SetItem, link) end
+    return ok
 end
 
 function Slash.Handle(msg)
@@ -479,7 +504,7 @@ function Slash.Handle(msg)
     elseif cmd == "weight" then
         WeightCommand(rest)
     elseif cmd == "parse" then
-        local link = ExtractLink(rest) or tonumber(rest)
+        local link = ExtractLink(rest) or ParseItemID(rest)
         if link then Slash.PrintParse(link) else EG:Print(L.PARSE_USAGE) end
     elseif cmd == "unknown" then
         Slash.PrintUnknown()
@@ -494,13 +519,16 @@ function Slash.Handle(msg)
     elseif cmd == "socket" then
         if slower(rest) == "auto" then
             EG:Set("socketValue", nil)
-        elseif ParseNumber(rest) then
-            EG:Set("socketValue", ParseNumber(rest))
+        elseif rest ~= "" then
+            local v = ReadRange(rest, 0, 1000)
+            if v then EG:Set("socketValue", v) end
         end
         EG:Print(L.SOCKETS .. ": " .. SocketText())
     elseif cmd == "ilvl" then
-        local v = ParseNumber(rest)
-        if v and v >= 0 then EG:Set("ilvlWeight", v) end
+        if rest ~= "" then
+            local v = ReadRange(rest, 0, 10)
+            if v then EG:Set("ilvlWeight", v) end
+        end
         ShowIlvl()
     elseif cmd == "ilvlscale" then
         local v = ParseSwitch(rest, EG:Get("ilvlScaling") ~= false)
@@ -508,31 +536,38 @@ function Slash.Handle(msg)
         local eff, _, factor = Score.EffectiveIlvlWeight()
         EG:Print(sformat(L.SET_ILVLSCALE, OnOff(v), EG.FmtWeight(factor)) .. "  ->  " .. EG.FmtWeight(eff))
     elseif cmd == "mindelta" then
-        local v = ParseNumber(rest)
-        if v and v >= 0 then EG:Set("minDelta", v) end
+        if rest ~= "" then
+            local v = ReadRange(rest, 0, 1000)
+            if v then EG:Set("minDelta", v) end
+        end
         ShowMinDelta()
     elseif cmd == "mindeltapct" then
-        local v = ParseNumber(rest)
-        if v and v >= 0 then EG:Set("minDeltaPercent", v) end
+        if rest ~= "" then
+            local v = ReadRange(rest, 0, 100)
+            if v then EG:Set("minDeltaPercent", v) end
+        end
         ShowMinDelta()
     elseif TOGGLES[cmd] then
         Toggle(cmd, rest)
     elseif cmd == "options" or cmd == "config" or cmd == "settings" then
         EG.Options.Open()
     elseif cmd == "scale" then
-        local v = ParseNumber(rest)
-        if v and v >= 0.5 and v <= 2.0 then
-            EG.cdb.gui.scale = v
-            EG:Fire("GUI_SCALE")
+        EG.cdb.gui = EG.cdb.gui or {}
+        if rest ~= "" then
+            local v = ReadRange(rest, 0.5, 2.0)
+            if v then
+                EG.cdb.gui.scale = v
+                EG:Fire("GUI_SCALE")
+            end
         end
-        EG:Print(sformat(L.SET_SCALE, tostring(EG.cdb.gui.scale)))
+        EG:Print(sformat(L.SET_SCALE, tostring(EG.cdb.gui.scale or 1)))
     elseif cmd == "reset" then
         Reset()
     else
         -- kein Befehl: ein Gegenstandslink irgendwo in der Eingabe (der Link selbst enthaelt Leerzeichen und
         -- beginnt mit einem Farbcode, ist also nie ein Befehl) oder eine Gegenstands-ID
         local link = ExtractLink(msg)
-        local id = tonumber(cmd) or tonumber(rest)
+        local id = ParseItemID(cmd) or ParseItemID(rest)
         if link then
             ReportFor(link)
         elseif id then

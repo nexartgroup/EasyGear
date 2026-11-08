@@ -128,14 +128,9 @@ function EG:Print(...)
     Emit(COLOR.title .. "EasyGear" .. COLOR.reset .. ": " .. table.concat(parts, " "))
 end
 
-function EG:Debug(...)
-    if not (self.db and self.db.debug) then return end
-    local parts = {}
-    for i = 1, select("#", ...) do parts[#parts + 1] = tostring((select(i, ...))) end
-    Emit(COLOR.grey .. "EasyGear[debug]: " .. table.concat(parts, " ") .. COLOR.reset)
-end
-
--- Fehler in Rueckrufen (Haken, Zeitgeber) duerfen nie das Spiel stoeren: pcall, einmal melden.
+--[[ Fehler in Rueckrufen (Haken, Zeitgeber, Befehle) duerfen nie das Spiel stoeren: pcall. Jede verschiedene
+     Meldung erscheint einmal im Chat (ein Fehler, der bei jedem Tooltip auftritt, soll nicht den Chat fluten,
+     aber auch nicht unbemerkt bleiben) und steht danach in EG.lastError (/eg status).                        ]]
 local reportedErrors = {}
 function EG:Try(label, fn, ...)
     local ok, err = pcall(fn, ...)
@@ -144,13 +139,16 @@ function EG:Try(label, fn, ...)
         if not reportedErrors[key] then
             reportedErrors[key] = true
             EG.lastError = { label = label, err = err }
-            if EG.db and EG.db.debug then
-                Emit(COLOR.bad .. "EasyGear[" .. tostring(label) .. "]: " .. tostring(err) .. COLOR.reset)
-            end
+            Emit(COLOR.bad .. "EasyGear[" .. tostring(label) .. "]: " .. string.sub(tostring(err), 1, 400) .. COLOR.reset)
         end
         return false, err
     end
     return true, err
+end
+
+-- Eine Funktion, die Fehler abfaengt wie EG:Try - fuer die Skripte der eigenen Fenster und Rueckrufe der Einstellungen
+function EG:Guard(label, fn)
+    return function(...) EG:Try(label, fn, ...) end
 end
 
 ------------------------------------------------------------------------------
@@ -213,7 +211,6 @@ local DEFAULTS = {
     autoLeveling      = true,   -- unter der Hoechststufe das Leveln-Profil der Klasse
     minDelta          = 0,      -- Mindestvorsprung in Punkten fuer "Upgrade"
     minDeltaPercent   = 1,      -- zusaetzlich: Prozent des Vergleichswerts
-    debug             = false,
     custom            = {},     -- eigene Profile (kontoweit)
 }
 EG.DEFAULTS = DEFAULTS
@@ -376,9 +373,14 @@ function EG:InvalidateComparisons()
     end
 end
 
-function EG:InvalidateAll()
+-- Berechnete Ergebnisse verwerfen (Profilwahl und alle Vergleiche), ohne die Anzeigen zu benachrichtigen
+function EG:InvalidateResults()
     if self.Profiles and self.Profiles.Invalidate then self.Profiles.Invalidate() end
     self:InvalidateComparisons()
+end
+
+function EG:InvalidateAll()
+    self:InvalidateResults()
     self:Fire("INVALIDATED")
 end
 
