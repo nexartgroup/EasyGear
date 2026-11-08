@@ -13,6 +13,10 @@ vendors, loot windows, loot rolls, trade, auction house, mail and every item too
   armor and weapon types are recognised through the client itself, not by name
 * Optional integration with **ElvUI**, **Bagnon** and **Immersion**
 
+> **WoW Forever?** The edition for Blizzard's new Forever client lives in [`forever/`](forever/README.md)
+> (version 4.0.0, built on the default interface only, compare and recommend only).
+> This page describes the 3.3.5a (WotLK) edition.
+
 [Deutsche Version weiter unten](#easygear-deutsch)
 
 ---
@@ -678,6 +682,10 @@ jedem Item-Tooltip.
   Englisch ist der Fallback für alles Unübersetzte; Rüstungs- und Waffentypen erkennt der
   Client selbst, nicht ein Namensvergleich
 * Optionale Anbindung an **ElvUI**, **Bagnon** und **Immersion**
+
+> **WoW Forever?** Die Ausgabe für den neuen Forever-Client liegt in [`forever/`](forever/README.md)
+> (Version 4.0.0, nur Standard-Oberfläche, nur vergleichen und empfehlen).
+> Diese Seite beschreibt die 3.3.5a-Ausgabe (WotLK).
 
 ---
 

@@ -1,0 +1,40 @@
+## Interface: 16001
+## Title: EasyGear
+## Notes: Gear scoring, upgrade detection and item comparison for WoW Forever - in bags, bank, vendors, loot, rolls, quest rewards and every item tooltip. It only compares and recommends.
+## Notes-deDE: Ausruestungsbewertung, Upgrade-Erkennung und Vergleich fuer WoW Forever - in Taschen, Bank, bei Haendlern, in Beute, Wuerfeln, Questbelohnungen und jedem Gegenstands-Tooltip. Es vergleicht und empfiehlt nur.
+## Author: nexartgroup
+## Version: 4.0.0
+## Category: Inventory
+## IconTexture: Interface\Icons\INV_Misc_Gear_01
+## SavedVariables: EasyGearDB
+## SavedVariablesPerCharacter: EasyGearCharDB
+## X-Website: https://github.com/nexartgroup/EasyGear
+## AddonCompartmentFunc: EasyGear_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: EasyGear_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: EasyGear_OnAddonCompartmentLeave
+
+# Sprachdateien: eine je Clientsprache, Englisch (enUS) ist die vollstaendige Referenz.
+# enGB nutzt enUS, esMX nutzt esES. Nicht uebersetzte Texte fallen auf Englisch zurueck.
+Locales\enUS.lua
+Locales\deDE.lua
+Locales\frFR.lua
+Locales\esES.lua
+Locales\ruRU.lua
+Locales\koKR.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
+
+Core.lua
+Stats.lua
+Specs.lua
+Profiles.lua
+Items.lua
+Score.lua
+Recommend.lua
+Tooltip.lua
+Marks.lua
+Contexts.lua
+Window.lua
+ProfileWindow.lua
+Options.lua
+Slash.lua
